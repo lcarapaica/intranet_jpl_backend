@@ -1,0 +1,39 @@
+nelmio_api_doc:
+    documentation:
+        info:
+            title: API Intranet
+            description: API REST principal
+            version: 1.0.0
+        components:
+            securitySchemes:
+                Bearer:
+                    type: http
+                    scheme: bearer
+                    bearerFormat: JWT
+        security:
+            - Bearer: []
+        paths:
+            /api/login:
+                post:
+                    tags: [Autenticación]
+                    summary: Iniciar sesión y obtener token JWT
+                    requestBody:
+                        content:
+                            application/json:
+                                schema:
+                                    type: object
+                                    properties:
+                                        email: { type: string, example: admin@intranet.com }
+                                        password: { type: string, example: mi_password_seguro }
+                    responses:
+                        '200':
+                            description: Token generado exitosamente
+                            content:
+                                application/json:
+                                    schema:
+                                        type: object
+                                        properties:
+                                            token: { type: string }
+    areas:
+        path_patterns:
+            - ^/api(?!/doc$) # Documenta todo bajo /api excepto la propia vista /api/doc
