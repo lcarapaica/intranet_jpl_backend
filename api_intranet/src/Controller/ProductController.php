@@ -71,6 +71,7 @@ class ProductController extends AbstractController
         $data = json_decode($request->getContent(), true);
         $product = new Product();
 
+        //sets fields to values
         $product->setNombre($data['nombre'] ?? '');
         $product->setCategoria($data['categoria'] ?? '');
         $product->setMarca($data['marca'] ?? '');
@@ -106,12 +107,14 @@ class ProductController extends AbstractController
     {
         $product = $repository->find($id);
 
+        //checks if an id was entered or item was deleted
         if (!$product || $product->getDeletedAt() !== null) {
             return $this->json(['error' => 'Producto no encontrado'], 404);
         }
 
         $data = json_decode($request->getContent(), true);
 
+        //sets fields to new values
         if (isset($data['nombre'])) $product->setNombre($data['nombre']);
         if (isset($data['categoria'])) $product->setCategoria($data['categoria']);
         if (isset($data['marca'])) $product->setMarca($data['marca']);
@@ -122,6 +125,7 @@ class ProductController extends AbstractController
         if (isset($data['locacion'])) $product->setLocacion($data['locacion']);
         if (isset($data['condicion'])) $product->setCondicion($data['condicion']);
 
+        //El @Assert\Validates each field with the product entity
         $errors = $validator->validate($product);
         if (count($errors) > 0) {
             return $this->json(['error' => (string) $errors], 400);
@@ -146,6 +150,7 @@ class ProductController extends AbstractController
     {
         $product = $repository->find($id);
 
+        //checks if an id was entered or item was deleted
         if (!$product || $product->getDeletedAt() !== null) {
             return $this->json(['error' => 'Producto no encontrado'], 404);
         }

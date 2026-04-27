@@ -14,6 +14,7 @@ class ProductRepository extends ServiceEntityRepository
         parent::__construct($registry, Product::class);
     }
 
+    //function handling search field and pagination
     public function searchAndPaginate($term, $page = 1, $limit = 25)
     {
         $qb = $this->createQueryBuilder('p')
