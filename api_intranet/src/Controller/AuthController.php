@@ -42,11 +42,11 @@ class AuthController extends AbstractController
         // Crear el usuario
         $user = new User();
         $user->setEmail($data['email']);
-        
+
         // Encriptar la contraseña (Regla de seguridad)
         $hashedPassword = $encoder->encodePassword($user, $data['password']);
         $user->setPassword($hashedPassword);
-        
+
         $user->setRoles(['ROLE_USER']);
 
         // Guardar en base de datos
@@ -54,5 +54,22 @@ class AuthController extends AbstractController
         $em->flush();
 
         return new JsonResponse(['message' => 'Usuario creado exitosamente'], 201);
+    }
+
+    /**
+     * @Route("/api/me", name="api_me", methods={"GET"})
+     */
+    public function me(): JsonResponse
+    {
+        $user = $this->getUser();
+
+        if (!$user) {
+            return new JsonResponse(['error' => 'No autenticado'], 401);
+        }
+
+        return new JsonResponse([
+            'email' => $user->getUsername(),
+            'roles' => $user->getRoles(),
+        ]);
     }
 }
