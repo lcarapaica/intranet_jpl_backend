@@ -78,7 +78,7 @@ class ProductController extends AbstractController
         $product->setSerial($data['serial'] ?? null);
         $product->setCondicion($data['condicion'] ?? '');
         $product->setLocacion($data['locacion'] ?? null);
-        
+
         // El @Assert\Choice de la entidad se encarga de validar "Nuevo" o "Usado" automáticamente
         $errors = $validator->validate($product);
         if (count($errors) > 0) {
@@ -115,7 +115,7 @@ class ProductController extends AbstractController
         if (isset($data['modelo'])) $product->setModelo($data['modelo']);
         if (isset($data['caracteristicas'])) $product->setCaracteristicas($data['caracteristicas']);
         if (isset($data['color'])) $product->setColor($data['color']);
-        if (array_key_exists('serial', $data)) $product->setSerial($data['serial']); 
+        if (array_key_exists('serial', $data)) $product->setSerial($data['serial']);
         if (isset($data['locacion'])) $product->setLocacion($data['locacion']);
         if (isset($data['condicion'])) $product->setCondicion($data['condicion']);
 
@@ -124,6 +124,7 @@ class ProductController extends AbstractController
             return $this->json(['error' => (string) $errors], 400);
         }
 
+        $em->persist($product);
         $em->flush();
 
         return $this->json(['message' => 'Producto actualizado correctamente']);
