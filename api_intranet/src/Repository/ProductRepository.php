@@ -17,25 +17,26 @@ class ProductRepository extends ServiceEntityRepository
     public function searchAndPaginate($term, $page = 1, $limit = 25)
     {
         $qb = $this->createQueryBuilder('p')
-            ->where('p.deletedAt IS NULL'); // Ignorar los eliminados lógicamente
+            ->where('p.deletedAt IS NULL'); // Ignore Soft Deleted rows
 
-        // Búsqueda Incremental (Filtro por todos los campos)
-        if (!empty($term)) {
-            $qb->andWhere('p.nombre LIKE :term OR p.categoria LIKE :term OR p.marca LIKE :term OR p.modelo LIKE :term OR p.serial LIKE :term OR p.locacion LIKE :term OR p.caracteristicas LIKE :term')
-               ->setParameter('term', '%' . $term . '%');
+        // Incremental Search, perhaps too inclusive, does NOT check for ID
+        if ($term !== null && $term !== '') {
+            $qb->andWhere('p.nombre LIKE :term OR p.color LIKE :term OR p.categoria LIKE :term OR p.marca LIKE :term OR p.modelo LIKE :term OR p.serial LIKE :term OR p.locacion LIKE :term OR p.caracteristicas LIKE :term')
+                ->setParameter('term', '%' . $term . '%');
         }
 
         $qb->orderBy('p.id', 'DESC');
 
-        // Paginación
+        // Pagination
         $offset = ($page - 1) * $limit;
         $qb->setFirstResult($offset)
-           ->setMaxResults($limit);
+            ->setMaxResults($limit);
 
         $paginator = new Paginator($qb);
         $totalItems = count($paginator);
         $totalPages = ceil($totalItems / $limit);
 
+        //defines what categories the search returns
         $data = [];
         foreach ($paginator as $product) {
             $data[] = [
@@ -44,12 +45,15 @@ class ProductRepository extends ServiceEntityRepository
                 'categoria' => $product->getCategoria(),
                 'marca' => $product->getMarca(),
                 'modelo' => $product->getModelo(),
+                'caracteristicas' => $product->getCaracteristicas(),
+                'color' => $product->getColor(),
                 'serial' => $product->getSerial(),
-                'condicion' => $product->getCondicion(), // Arreglo ej: ["Nuevo"]
+                'condicion' => $product->getCondicion(),
                 'locacion' => $product->getLocacion(),
             ];
         }
 
+        //returns the data and additional pagination info
         return [
             'data' => $data,
             'meta' => [

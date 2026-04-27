@@ -13,21 +13,22 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 use OpenApi\Annotations as OA;
 
 /**
- * @Route("/api/productos")
+ * @Route("/api/products")
  */
 class ProductController extends AbstractController
 {
     /**
      * @Route("", methods={"GET"})
      * @OA\Get(
-     * summary="Listar productos (Paginación y Búsqueda)",
-     * tags={"Productos"},
-     * @OA\Parameter(name="search", in="query", description="Término de búsqueda incremental", @OA\Schema(type="string")),
-     * @OA\Parameter(name="limit", in="query", description="Límite (25, 50, 100)", @OA\Schema(type="integer", default=25)),
-     * @OA\Parameter(name="page", in="query", description="Número de página", @OA\Schema(type="integer", default=1)),
-     * @OA\Response(response=200, description="Lista de productos")
+     * summary="Lists products (including search and pagination)",
+     * tags={"Products"},
+     * @OA\Parameter(name="search", in="query", description="Search String", @OA\Schema(type="string")),
+     * @OA\Parameter(name="limit", in="query", description="Page limit (25, 50, 100)", @OA\Schema(type="integer", default=25)),
+     * @OA\Parameter(name="page", in="query", description="Page Number", @OA\Schema(type="integer", default=1)),
+     * @OA\Response(response=200, description="List of products")
      * )
      */
+    //Manages the search query
     public function index(Request $request, ProductRepository $repository): JsonResponse
     {
         $search = $request->query->get('search', '');
@@ -45,8 +46,8 @@ class ProductController extends AbstractController
     /**
      * @Route("", methods={"POST"})
      * @OA\Post(
-     * summary="Crear un nuevo producto",
-     * tags={"Productos"},
+     * summary="Create a new product",
+     * tags={"Products"},
      * @OA\RequestBody(
      * @OA\JsonContent(
      * type="object",
@@ -61,9 +62,10 @@ class ProductController extends AbstractController
      * @OA\Property(property="locacion", type="string", example="Almacén Principal")
      * )
      * ),
-     * @OA\Response(response=201, description="Producto creado")
+     * @OA\Response(response=201, description="Product Created")
      * )
      */
+    //Creates a new Product
     public function create(Request $request, EntityManagerInterface $em, ValidatorInterface $validator): JsonResponse
     {
         $data = json_decode($request->getContent(), true);
@@ -79,7 +81,7 @@ class ProductController extends AbstractController
         $product->setCondicion($data['condicion'] ?? '');
         $product->setLocacion($data['locacion'] ?? null);
 
-        // El @Assert\Choice de la entidad se encarga de validar "Nuevo" o "Usado" automáticamente
+        // El @Assert\Validates each field with the product entity
         $errors = $validator->validate($product);
         if (count($errors) > 0) {
             return $this->json(['error' => (string) $errors], 400);
@@ -94,11 +96,12 @@ class ProductController extends AbstractController
     /**
      * @Route("/{id}", methods={"PUT"})
      * @OA\Put(
-     * summary="Actualizar un producto",
-     * tags={"Productos"},
-     * @OA\Response(response=200, description="Producto actualizado")
+     * summary="Update a product",
+     * tags={"Products"},
+     * @OA\Response(response=200, description="Product Updated")
      * )
      */
+    //Updates a product
     public function update(int $id, Request $request, EntityManagerInterface $em, ProductRepository $repository, ValidatorInterface $validator): JsonResponse
     {
         $product = $repository->find($id);
@@ -133,11 +136,12 @@ class ProductController extends AbstractController
     /**
      * @Route("/{id}", methods={"DELETE"})
      * @OA\Delete(
-     * summary="Eliminar un producto (Eliminado Lógico)",
-     * tags={"Productos"},
-     * @OA\Response(response=200, description="Producto eliminado")
+     * summary="Soft Delete a Product",
+     * tags={"Products"},
+     * @OA\Response(response=200, description="Product Eliminated")
      * )
      */
+    //Deletes a product
     public function delete(int $id, EntityManagerInterface $em, ProductRepository $repository): JsonResponse
     {
         $product = $repository->find($id);

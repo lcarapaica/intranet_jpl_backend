@@ -17,7 +17,7 @@ class AuthController extends AbstractController
      * @Route("/api/register", name="api_register", methods={"POST"})
      * @OA\Post(
      * path="/api/register",
-     * summary="Registrar un nuevo usuario en la base de datos",
+     * summary="Register a new user into the database",
      * tags={"Autenticación"},
      * @OA\RequestBody(
      * @OA\JsonContent(
@@ -26,30 +26,30 @@ class AuthController extends AbstractController
      * @OA\Property(property="password", type="string", example="mi_password_seguro")
      * )
      * ),
-     * @OA\Response(response=201, description="Usuario creado exitosamente"),
-     * @OA\Response(response=400, description="Error de validación")
+     * @OA\Response(response=201, description="User Creation successful"),
+     * @OA\Response(response=400, description="Validation error")
      * )
      */
     public function register(Request $request, UserPasswordEncoderInterface $encoder, EntityManagerInterface $em): JsonResponse
     {
         $data = json_decode($request->getContent(), true);
 
-        // Validaciones básicas
+        // Set Validation
         if (!isset($data['email']) || !isset($data['password'])) {
             return new JsonResponse(['error' => 'Email y password son obligatorios'], 400);
         }
 
-        // Crear el usuario
+        // Create user
         $user = new User();
         $user->setEmail($data['email']);
 
-        // Encriptar la contraseña (Regla de seguridad)
+        // Hash Password
         $hashedPassword = $encoder->encodePassword($user, $data['password']);
         $user->setPassword($hashedPassword);
 
         $user->setRoles(['ROLE_USER']);
 
-        // Guardar en base de datos
+        // Save into the database
         $em->persist($user);
         $em->flush();
 
@@ -59,6 +59,7 @@ class AuthController extends AbstractController
     /**
      * @Route("/api/me", name="api_me", methods={"GET"})
      */
+    //Returns user info
     public function me(): JsonResponse
     {
         $user = $this->getUser();
