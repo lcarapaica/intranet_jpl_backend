@@ -30,6 +30,7 @@ class UserRepository extends ServiceEntityRepository implements PasswordUpgrader
      * @throws ORMException
      * @throws OptimisticLockException
      */
+    //Streamlines adding an user
     public function add(User $entity, bool $flush = true): void
     {
         $this->_em->persist($entity);
@@ -42,6 +43,7 @@ class UserRepository extends ServiceEntityRepository implements PasswordUpgrader
      * @throws ORMException
      * @throws OptimisticLockException
      */
+    //Streamlines deleting an user
     public function remove(User $entity, bool $flush = true): void
     {
         $this->_em->remove($entity);
@@ -59,6 +61,7 @@ class UserRepository extends ServiceEntityRepository implements PasswordUpgrader
             throw new UnsupportedUserException(sprintf('Instances of "%s" are not supported.', \get_class($user)));
         }
 
+        //saves the new hashed password to DB
         $user->setPassword($newHashedPassword);
         $this->_em->persist($user);
         $this->_em->flush();
