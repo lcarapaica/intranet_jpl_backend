@@ -28,6 +28,12 @@ class User implements UserInterface
     private $email;
 
     /**
+     * @ORM\Column(type="string", length=100, unique=true)
+     * @Assert\NotBlank(message="El nombre de usuario es obligatorio")
+     */
+    private $username;
+
+    /**
      * @ORM\Column(type="json")
      */
     private $roles = [];
@@ -56,13 +62,25 @@ class User implements UserInterface
     }
 
     /**
-     * A visual identifier that represents this user.
-     *
      * @see UserInterface
      */
     public function getUsername(): string
     {
         return (string) $this->email;
+    }
+
+    /**
+     * Use this for display in the UI.
+     */
+    public function getDisplayName(): string
+    {
+        return (string) $this->username;
+    }
+
+    public function setUsername(string $username): self
+    {
+        $this->username = $username;
+        return $this;
     }
 
     /**

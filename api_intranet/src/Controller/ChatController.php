@@ -53,11 +53,11 @@ class ChatController extends AbstractController
 
         // Decode incoming JSON
         $data = json_decode($request->getContent(), true);
-        
+
         $category = $data['category'] ?? 'general';
         $topicName = $data['topic'] ?? 'main';
         $fullTopic = $category . '/' . $topicName;
-        
+
         $message = $data['message'] ?? '';
 
         if (empty($message)) {
@@ -70,7 +70,7 @@ class ChatController extends AbstractController
         $chatMessage->setCategory($category);
         $chatMessage->setTopic($topicName);
         $chatMessage->setSender($user);
-        
+
         $em->persist($chatMessage);
         $em->flush();
 
@@ -78,7 +78,7 @@ class ChatController extends AbstractController
         $payload = [
             'id' => $chatMessage->getId(),
             'senderId' => $user->getId(),
-            'senderName' => $user->getUsername(),
+            'senderName' => $user->getDisplayName(),
             'category' => $category,
             'topic' => $topicName,
             'message' => $message,
@@ -151,7 +151,7 @@ class ChatController extends AbstractController
             $data[] = [
                 'id' => $msg->getId(),
                 'senderId' => $msg->getSender()->getId(),
-                'senderName' => $msg->getSender()->getUsername(),
+                'senderName' => $msg->getSender()->getDisplayName(),
                 'message' => $msg->getContent(),
                 'timestamp' => $msg->getCreatedAt()->format('c'),
                 'updatedAt' => $msg->getUpdatedAt() ? $msg->getUpdatedAt()->format('c') : null
@@ -216,7 +216,7 @@ class ChatController extends AbstractController
         $now = new \DateTime();
         $createdAt = $chatMessage->getCreatedAt();
         $diff = $now->getTimestamp() - $createdAt->getTimestamp();
-        
+
         if ($diff > (30 * 60)) {
             return $this->json(['error' => 'El tiempo para editar este mensaje ha expirado'], 403);
         }
