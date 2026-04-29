@@ -42,5 +42,6 @@ security:
         - { path: ^/api/register, roles: ROLE_ADMIN }
         - { path: ^/api/users, roles: IS_AUTHENTICATED_FULLY }
         - { path: ^/api/products, roles: IS_AUTHENTICATED_FULLY }
+        - { path: ^/api/chat, roles: IS_AUTHENTICATED_FULLY }
         - { path: ^/api, roles: IS_AUTHENTICATED_FULLY }
         
