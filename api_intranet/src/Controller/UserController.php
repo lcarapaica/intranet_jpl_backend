@@ -49,9 +49,13 @@ class UserController extends AbstractController
         $order = $request->query->get('order', 'DESC');
 
         $activeParam = $request->query->get('active');
-        $active = null;
+        $active = true; // Defaults to active so pagination limits aren't affected by mixed statuses
+        
         if ($activeParam !== null && $activeParam !== '') {
-            $active = filter_var($activeParam, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            $parsedActive = filter_var($activeParam, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($parsedActive !== null) {
+                $active = $parsedActive;
+            }
         }
 
         // 2. Validate limit to prevent database stress
