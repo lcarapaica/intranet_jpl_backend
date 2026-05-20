@@ -106,6 +106,11 @@ class Product
      */
     private $deletedAt;
 
+    public function __construct()
+    {
+        $this->registeredAt = new \DateTime();
+    }
+
     // --- GETTERS Y SETTERS ---
 
     public function getId(): ?int

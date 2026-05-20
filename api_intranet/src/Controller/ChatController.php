@@ -611,7 +611,7 @@ class ChatController extends AbstractController
      * 
      * @OA\Post(
      *     path="/api/chat/conversations/{id}/participants",
-     *     summary="Add one or multiple members to a group conversation (admins only)",
+     *     summary="Add one or multiple members to a group conversation (group admins only)",
      *     tags={"Mensajeria"},
      *     @OA\Parameter(
      *         name="id",
