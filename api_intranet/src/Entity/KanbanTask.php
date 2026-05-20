@@ -5,6 +5,7 @@ namespace App\Entity;
 use App\Repository\KanbanTaskRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
+use Symfony\Component\Validator\Constraints as Assert;
 
 /**
  * @ORM\Entity(repositoryClass=KanbanTaskRepository::class)
@@ -31,24 +32,34 @@ class KanbanTask
 
     /**
      * @ORM\Column(type="string", length=255)
+     * @Assert\NotBlank(message="El título no puede estar vacío")
+     * @Assert\Length(max=255, maxMessage="El título no puede superar los 255 caracteres")
      * @Groups({"kanban:read"})
      */
     private $title;
 
     /**
-     * @ORM\Column(type="string", length=100)
+     * @ORM\Column(type="json")
      * @Groups({"kanban:read"})
      */
-    private $category;
+    private $category = [];
 
     /**
      * @ORM\Column(type="string", length=50)
+     * @Assert\Choice(
+     *     choices={KanbanTask::IMPORTANCE_LOW, KanbanTask::IMPORTANCE_MEDIUM, KanbanTask::IMPORTANCE_HIGH},
+     *     message="Valor de importancia inválido"
+     * )
      * @Groups({"kanban:read"})
      */
     private $importance;
 
     /**
      * @ORM\Column(type="string", length=50)
+     * @Assert\Choice(
+     *     choices={KanbanTask::STATUS_BACKLOG, KanbanTask::STATUS_TODO, KanbanTask::STATUS_IN_PROGRESS, KanbanTask::STATUS_COMPLETE},
+     *     message="Valor de estado inválido"
+     * )
      * @Groups({"kanban:read"})
      */
     private $status;
@@ -58,6 +69,24 @@ class KanbanTask
      * @Groups({"kanban:read"})
      */
     private $subTasks = [];
+
+    /**
+     * @ORM\Column(type="text", nullable=true)
+     * @Groups({"kanban:read"})
+     */
+    private $message;
+
+    /**
+     * @ORM\Column(type="datetime", nullable=true)
+     * @Groups({"kanban:read"})
+     */
+    private $dueAt;
+
+    /**
+     * @ORM\Column(type="integer", options={"default": 0})
+     * @Groups({"kanban:read"})
+     */
+    private $position = 0;
 
     /**
      * @ORM\Column(type="datetime")
@@ -72,6 +101,12 @@ class KanbanTask
     private $updatedAt;
 
     /**
+     * @ORM\Column(type="datetime", nullable=true)
+     * @Groups({"kanban:read"})
+     */
+    private $deletedAt;
+
+    /**
      * @ORM\ManyToOne(targetEntity=User::class)
      * @ORM\JoinColumn(nullable=false)
      */
@@ -82,6 +117,8 @@ class KanbanTask
         $this->createdAt = new \DateTime();
         $this->status = self::STATUS_BACKLOG;
         $this->importance = self::IMPORTANCE_MEDIUM;
+        $this->category = [];
+        $this->position = 0;
     }
 
     public function getId(): ?int
@@ -100,14 +137,14 @@ class KanbanTask
         return $this;
     }
 
-    public function getCategory(): ?string
+    public function getCategory(): ?array
     {
         return $this->category;
     }
 
-    public function setCategory(string $category): self
+    public function setCategory(array $category): self
     {
-        $this->category = $category;
+        $this->category = array_values(array_unique(array_filter(array_map('strval', $category))));
         return $this;
     }
 
@@ -140,7 +177,51 @@ class KanbanTask
 
     public function setSubTasks(?array $subTasks): self
     {
-        $this->subTasks = $subTasks;
+        $validated = [];
+        if ($subTasks !== null) {
+            foreach ($subTasks as $item) {
+                if (is_array($item) && isset($item['title'])) {
+                    $validated[] = [
+                        'title' => (string)$item['title'],
+                        'isCompleted' => isset($item['isCompleted']) ? (bool)$item['isCompleted'] : false
+                    ];
+                }
+            }
+        }
+        $this->subTasks = $validated;
+        return $this;
+    }
+
+    public function getMessage(): ?string
+    {
+        return $this->message;
+    }
+
+    public function setMessage(?string $message): self
+    {
+        $this->message = $message;
+        return $this;
+    }
+
+    public function getDueAt(): ?\DateTimeInterface
+    {
+        return $this->dueAt;
+    }
+
+    public function setDueAt(?\DateTimeInterface $dueAt): self
+    {
+        $this->dueAt = $dueAt;
+        return $this;
+    }
+
+    public function getPosition(): ?int
+    {
+        return $this->position;
+    }
+
+    public function setPosition(int $position): self
+    {
+        $this->position = $position;
         return $this;
     }
 
@@ -174,6 +255,17 @@ class KanbanTask
     public function setOwner(?User $owner): self
     {
         $this->owner = $owner;
+        return $this;
+    }
+
+    public function getDeletedAt(): ?\DateTimeInterface
+    {
+        return $this->deletedAt;
+    }
+
+    public function setDeletedAt(?\DateTimeInterface $deletedAt): self
+    {
+        $this->deletedAt = $deletedAt;
         return $this;
     }
 

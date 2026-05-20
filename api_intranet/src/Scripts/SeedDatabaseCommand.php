@@ -288,27 +288,27 @@ class SeedDatabaseCommand extends Command
         $tasksData = [
             [
                 'title'      => 'Configurar VPN corporativa',
-                'category'   => 'IT',
+                'category'   => ['IT'],
                 'importance' => KanbanTask::IMPORTANCE_HIGH,
                 'status'     => KanbanTask::STATUS_IN_PROGRESS,
                 'subTasks'   => [
-                    ['title' => 'Instalar cliente OpenVPN', 'done' => true],
-                    ['title' => 'Configurar certificados', 'done' => false],
+                    ['title' => 'Instalar cliente OpenVPN', 'isCompleted' => true],
+                    ['title' => 'Configurar certificados', 'isCompleted' => false],
                 ],
             ],
             [
                 'title'      => 'Inventario de equipos Q2',
-                'category'   => 'Administración',
+                'category'   => ['Administración'],
                 'importance' => KanbanTask::IMPORTANCE_MEDIUM,
                 'status'     => KanbanTask::STATUS_TODO,
                 'subTasks'   => [
-                    ['title' => 'Listar activos fijos', 'done' => false],
-                    ['title' => 'Actualizar hoja de cálculo', 'done' => false],
+                    ['title' => 'Listar activos fijos', 'isCompleted' => false],
+                    ['title' => 'Actualizar hoja de cálculo', 'isCompleted' => false],
                 ],
             ],
             [
                 'title'      => 'Actualizar política de contraseñas',
-                'category'   => 'Seguridad',
+                'category'   => ['Seguridad'],
                 'importance' => KanbanTask::IMPORTANCE_HIGH,
                 'status'     => KanbanTask::STATUS_BACKLOG,
                 'subTasks'   => [],
