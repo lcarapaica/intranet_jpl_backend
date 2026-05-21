@@ -670,7 +670,7 @@ class ChatController extends AbstractController
      * 
      * @OA\Post(
      *     path="/api/chat/conversations/{id}/participants",
-     *     summary="Add one or multiple members to a group conversation (admins only)",
+     *     summary="Add one or multiple members to a group conversation (group admins only)",
      *     tags={"Mensajeria"},
      *     @OA\Parameter(
      *         name="id",
@@ -683,8 +683,14 @@ class ChatController extends AbstractController
      *         required=true,
      *         @OA\JsonContent(
      *             type="object",
-     *             @OA\Property(property="userId", type="integer", example=3, description="ID del usuario a agregar (individual)"),
-     *             @OA\Property(property="userIds", type="array", @OA\Items(type="integer"), example={2, 3}, description="Lista de IDs de usuarios a agregar en lote")
+     *             @OA\Property(
+     *                 property="userId",
+     *                 description="ID del usuario a agregar (puede ser un ID individual o un array de IDs)",
+     *                 oneOf={
+     *                     @OA\Schema(type="integer", example=3),
+     *                     @OA\Schema(type="array", @OA\Items(type="integer"), example={2, 3})
+     *                 }
+     *             )
      *         )
      *     ),
      *     @OA\Response(
@@ -740,14 +746,15 @@ class ChatController extends AbstractController
         // Parse the payload, supporting both single 'userId' and array of 'userIds'.
         $data = json_decode($request->getContent(), true);
 
-        $userIds = $data['userIds'] ?? [];
-        if (isset($data['userId'])) {
-            $userIds[] = $data['userId'];
+        $userIdInput = $data['userId'] ?? [];
+        if (!is_array($userIdInput)) {
+            $userIdInput = [$userIdInput];
         }
-        $userIds = array_unique(array_filter($userIds));
+        
+        $userIds = array_unique(array_filter($userIdInput));
 
         if (empty($userIds)) {
-            return $this->json(['error' => 'El ID de usuario o la lista de IDs de usuario son obligatorios'], 400);
+            return $this->json(['error' => 'El ID de usuario es obligatorio'], 400);
         }
 
         $addedUsers = [];
