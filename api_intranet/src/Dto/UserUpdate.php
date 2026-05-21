@@ -5,8 +5,19 @@ namespace App\Dto;
 use Symfony\Component\Validator\Constraints as Assert;
 
 //Receives and validates the json
-class UserUpdateDto
+class UserUpdate
 {
+    public static function fromArray(array $data): self
+    {
+        $dto = new self();
+        $dto->email = $data['email'] ?? null;
+        $dto->name = $data['name'] ?? null;
+        $dto->surname = $data['surname'] ?? null;
+        $dto->roles = $data['roles'] ?? null;
+        $dto->password = $data['password'] ?? null;
+        return $dto;
+    }
+
     /**
      * The ranked roles that are mutually exclusive.
      * Only one of these should be stored on a user at a time.
@@ -28,7 +39,7 @@ class UserUpdateDto
     /**
      * @Assert\Length(
      *      min=6,
-     *      minMessage="La contraseña debe tener al menos {{ limit }} caracteres"
+     *      minMessage="Password must be at least {{ limit }} characters"
      * )
      */
     public $password;

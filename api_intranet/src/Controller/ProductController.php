@@ -4,6 +4,8 @@ namespace App\Controller;
 
 use App\Entity\Product;
 use App\Repository\ProductRepository;
+use App\Dto\ProductFilterInput;
+use App\Dto\ProductInput;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -32,37 +34,17 @@ class ProductController extends AbstractController
      * @OA\Response(response=200, description="List of products")
      * )
      */
-    //Manages the search query
+    //Manages the search query and pagination
     public function index(Request $request, ProductRepository $repository): JsonResponse
     {
-        $search  = $request->query->get('search', '');
-        $limit   = $request->query->getInt('limit', 25);
-        $page    = $request->query->getInt('page', 1);
-        $empresa = $request->query->get('empresa');
-        $sort    = $request->query->get('sort', 'id');
-        $order   = $request->query->get('order', 'DESC');
+        // Check if current user has logistics/admin role
+        $hasLogisticsAccess = $this->isGranted('ROLE_ADMIN') || $this->isGranted('ROLE_LOGISTICS');
 
-        if (!in_array($limit, [10, 25, 50, 100])) {
-            $limit = 25;
-        }
+        // Sanitize incoming parameters via DTO
+        $filterInput = ProductFilterInput::fromRequest($request, $hasLogisticsAccess);
 
-        $activeParam = $request->query->get('active');
-        $active = true; // Defaults to active so pagination limits aren't affected by mixed statuses
-        
-        if ($activeParam !== null && $activeParam !== '') {
-            $parsedActive = filter_var($activeParam, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
-            if ($parsedActive !== null) {
-                $active = $parsedActive;
-            }
-        }
-
-        // Only ROLE_ADMIN or ROLE_LOGISTICS can see inactive products
-        $hasAccessToInactive = $this->isGranted('ROLE_ADMIN') || $this->isGranted('ROLE_LOGISTICS');
-        if (!$hasAccessToInactive) {
-            $active = true;
-        }
-
-        $result = $repository->searchAndPaginate($search, $page, $limit, $empresa, $active, $sort, $order);
+        // Fetch paginated results from repository using clean criteria array
+        $result = $repository->searchAndPaginate($filterInput->toArray());
 
         return $this->json($result);
     }
@@ -107,27 +89,26 @@ class ProductController extends AbstractController
             return $this->json(['error' => 'Producto no encontrado'], 404);
         }
 
-        // Hide deleted products from non-admins
+        // Hide deleted products from non-admins / non-logistics
         if (!$product->isActive() && !$this->isGranted('ROLE_LOGISTICS')) {
             return $this->json(['error' => 'Producto no encontrado'], 404);
         }
 
-
         $productData = [
-            'id' => $product->getId(),
-            'nombre' => $product->getNombre(),
-            'categoria' => $product->getCategoria(),
-            'marca' => $product->getMarca(),
-            'modelo' => $product->getModelo(),
+            'id'              => $product->getId(),
+            'nombre'          => $product->getNombre(),
+            'categoria'       => $product->getCategoria(),
+            'marca'           => $product->getMarca(),
+            'modelo'          => $product->getModelo(),
             'caracteristicas' => $product->getCaracteristicas(),
-            'color' => $product->getColor(),
-            'serial' => $product->getSerial(),
-            'condicion' => $product->getCondicion(),
-            'locacion' => $product->getLocacion(),
-            'cantidad' => $product->getCantidad(),
-            'empresa' => $product->getEmpresa(),
-            'registeredAt' => $product->getRegisteredAt() ? $product->getRegisteredAt()->format('Y-m-d') : null,
-            'isActive' => $product->isActive(),
+            'color'           => $product->getColor(),
+            'serial'          => $product->getSerial(),
+            'condicion'       => $product->getCondicion(),
+            'locacion'        => $product->getLocacion(),
+            'cantidad'        => $product->getCantidad(),
+            'empresa'         => $product->getEmpresa(),
+            'registeredAt'    => $product->getRegisteredAt() ? $product->getRegisteredAt()->format('Y-m-d') : null,
+            'isActive'        => $product->isActive(),
         ];
 
         if ($this->isGranted('ROLE_LOGISTICS')) {
@@ -166,35 +147,22 @@ class ProductController extends AbstractController
         if (!$this->isGranted('ROLE_LOGISTICS')) {
             return $this->json(['error' => 'No tienes permisos para crear productos.'], 403);
         }
+
         $content = $request->getContent();
         $data = json_decode($content, true);
 
         if ($content && $data === null) {
             return $this->json(['error' => 'Formato JSON inválido'], 400);
         }
-
         $data = $data ?: [];
+
+        // Maps array into DTO using static factory
+        $dto = ProductInput::fromArray($data);
+
         $product = new Product();
+        $dto->updateEntity($product, array_keys($data));
 
-
-        //sets fields to values
-        $product->setNombre($data['nombre'] ?? '');
-        $product->setCategoria($data['categoria'] ?? '');
-        $product->setMarca($data['marca'] ?? '');
-        $product->setModelo($data['modelo'] ?? '');
-        $product->setCaracteristicas($data['caracteristicas'] ?? null);
-        $product->setColor($data['color'] ?? null);
-        $product->setSerial($data['serial'] ?? null);
-        $product->setCondicion($data['condicion'] ?? '');
-        $product->setLocacion($data['locacion'] ?? null);
-        $product->setCantidad($data['cantidad'] ?? null);
-        $product->setEmpresa($data['empresa'] ?? null);
-        if (isset($data['registeredAt'])) {
-            $product->setRegisteredAt(new \DateTime($data['registeredAt']));
-        }
-
-
-        // El @Assert\Validates each field with the product entity
+        // Validate the product entity fields
         $errors = $validator->validate($product);
         if (count($errors) > 0) {
             $errorMessages = [];
@@ -218,18 +186,18 @@ class ProductController extends AbstractController
      *     @OA\RequestBody(
      *         @OA\JsonContent(
      *             type="object",
-     *             @OA\Property(property="nombre", type="string"),
-     *             @OA\Property(property="categoria", type="string"),
-     *             @OA\Property(property="marca", type="string"),
-     *             @OA\Property(property="modelo", type="string"),
-     *             @OA\Property(property="caracteristicas", type="string"),
-     *             @OA\Property(property="color", type="string"),
-     *             @OA\Property(property="serial", type="string", nullable=true),
-     *             @OA\Property(property="condicion", type="string"),
-     *             @OA\Property(property="locacion", type="string"),
-     *             @OA\Property(property="cantidad", type="integer"),
-     *             @OA\Property(property="empresa", type="string"),
-     *             @OA\Property(property="registeredAt", type="string", format="date"),
+     *             @OA\Property(property="nombre", type="string", example="Laptop ThinkPad"),
+     *             @OA\Property(property="categoria", type="string", example="Computación"),
+     *             @OA\Property(property="marca", type="string", example="Lenovo"),
+     *             @OA\Property(property="modelo", type="string", example="T14 Gen 2"),
+     *             @OA\Property(property="caracteristicas", type="string", example="16GB RAM, 512GB SSD"),
+     *             @OA\Property(property="color", type="string", example="Negro"),
+     *             @OA\Property(property="serial", type="string", nullable=true, example="SN123456"),
+     *             @OA\Property(property="condicion", type="string", example="Nuevo"),
+     *             @OA\Property(property="locacion", type="string", example="Almacén Principal"),
+     *             @OA\Property(property="cantidad", type="integer", example=10),
+     *             @OA\Property(property="empresa", type="string", example="JPL"),
+     *             @OA\Property(property="registeredAt", type="string", format="date", example="2026-05-21"),
      *             @OA\Property(property="deletedAt", type="string", nullable=true, example=null)
      *         )
      *     ),
@@ -242,9 +210,9 @@ class ProductController extends AbstractController
         if (!$this->isGranted('ROLE_LOGISTICS')) {
             return $this->json(['error' => 'No tienes permisos para editar este producto.'], 403);
         }
+
         $product = $repository->find($id);
 
-        //checks if a valid id was entered 
         if (!$product) {
             return $this->json(['error' => 'Producto no encontrado'], 404);
         }
@@ -255,26 +223,15 @@ class ProductController extends AbstractController
         if ($content && $data === null) {
             return $this->json(['error' => 'Formato JSON inválido'], 400);
         }
-
         $data = $data ?: [];
 
-        // sets fields to new values if they are present in the request
-        if (array_key_exists('nombre', $data)) $product->setNombre($data['nombre']);
-        if (array_key_exists('categoria', $data)) $product->setCategoria($data['categoria']);
-        if (array_key_exists('marca', $data)) $product->setMarca($data['marca']);
-        if (array_key_exists('modelo', $data)) $product->setModelo($data['modelo']);
-        if (array_key_exists('caracteristicas', $data)) $product->setCaracteristicas($data['caracteristicas']);
-        if (array_key_exists('color', $data)) $product->setColor($data['color']);
-        if (array_key_exists('serial', $data)) $product->setSerial($data['serial']);
-        if (array_key_exists('locacion', $data)) $product->setLocacion($data['locacion']);
-        if (array_key_exists('condicion', $data)) $product->setCondicion($data['condicion']);
-        if (array_key_exists('cantidad', $data)) $product->setCantidad($data['cantidad']);
-        if (array_key_exists('empresa', $data)) $product->setEmpresa($data['empresa']);
-        if (array_key_exists('registeredAt', $data)) {
-            $product->setRegisteredAt($data['registeredAt'] ? new \DateTime($data['registeredAt']) : null);
-        }
+        // Maps array into DTO using static factory
+        $dto = ProductInput::fromArray($data);
 
-        //El @Assert\Validates each field with the product entity
+        // Update entity with provided values
+        $dto->updateEntity($product, array_keys($data));
+
+        // Validate the product entity fields
         $errors = $validator->validate($product);
         if (count($errors) > 0) {
             $errorMessages = [];
@@ -304,9 +261,9 @@ class ProductController extends AbstractController
         if (!$this->isGranted('ROLE_LOGISTICS')) {
             return $this->json(['error' => 'No tienes permisos para eliminar este producto.'], 403);
         }
+
         $product = $repository->find($id);
 
-        //checks if an id was entered or item was deleted
         if (!$product || $product->getDeletedAt() !== null) {
             return $this->json(['error' => 'Producto no encontrado'], 404);
         }
@@ -366,25 +323,37 @@ class ProductController extends AbstractController
         $batchSize = 20;
         $allErrors = [];
         $productsToSave = [];
-        $seenSerials = [];
 
         foreach ($data as $index => $item) {
             $product = new Product();
 
-            // Asignación con valores por defecto "N/A" para campos obligatorios si vienen vacíos
-            $product->setNombre(!empty($item['nombre']) ? $item['nombre'] : 'N/A');
-            $product->setCategoria(!empty($item['categoria']) ? $item['categoria'] : 'N/A');
-            $product->setMarca(!empty($item['marca']) ? $item['marca'] : 'N/A');
-            $product->setModelo(!empty($item['modelo']) ? $item['modelo'] : 'N/A');
+            // Set fallback values
+            $nombre = !empty($item['nombre']) ? $item['nombre'] : 'N/A';
+            $categoria = !empty($item['categoria']) ? $item['categoria'] : 'N/A';
+            $marca = !empty($item['marca']) ? $item['marca'] : 'N/A';
+            $modelo = !empty($item['modelo']) ? $item['modelo'] : 'N/A';
+            $condicion = !empty($item['condicion']) ? $item['condicion'] : 'N/A';
+            $locacion = !empty($item['locacion']) ? $item['locacion'] : 'N/A';
+            $cantidad = isset($item['cantidad']) ? (int)$item['cantidad'] : 0;
+            $empresa = !empty($item['empresa']) ? $item['empresa'] : 'N/A';
 
-            $product->setCaracteristicas($item['caracteristicas'] ?? null);
-            $product->setColor($item['color'] ?? null);
-            $product->setSerial($item['serial'] ?? null);
+            // Construct payload array for DTO
+            $payload = array_merge($item, [
+                'nombre' => $nombre,
+                'categoria' => $categoria,
+                'marca' => $marca,
+                'modelo' => $modelo,
+                'condicion' => $condicion,
+                'locacion' => $locacion,
+                'cantidad' => $cantidad,
+                'empresa' => $empresa
+            ]);
 
-            $product->setCondicion(!empty($item['condicion']) ? $item['condicion'] : 'N/A');
-            $product->setLocacion(!empty($item['locacion']) ? $item['locacion'] : 'N/A');
-            $product->setCantidad(isset($item['cantidad']) ? (int)$item['cantidad'] : 0);
-            $product->setEmpresa(!empty($item['empresa']) ? $item['empresa'] : 'N/A');
+            $dto = ProductInput::fromArray($payload);
+
+            // Update entity properties (excluding registeredAt from updateEntity to handle it safely)
+            $fieldsToUpdate = array_filter(array_keys($payload), fn($k) => $k !== 'registeredAt');
+            $dto->updateEntity($product, $fieldsToUpdate);
 
             if (!empty($item['registeredAt'])) {
                 try {

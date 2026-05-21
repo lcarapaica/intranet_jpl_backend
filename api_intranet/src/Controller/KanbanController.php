@@ -78,6 +78,7 @@ class KanbanController extends AbstractController
 
         $tasks = $qb->getQuery()->getResult();
 
+        // Return the tasks serialized with the kanban
         return $this->json($tasks, 200, [], ['groups' => 'kanban:read']);
     }
 
@@ -145,6 +146,7 @@ class KanbanController extends AbstractController
             return $this->json(['error' => 'El título es obligatorio'], 400);
         }
 
+        // Initialize task entity and populate with defaults if keys are missing
         $task = new KanbanTask();
         $task->setTitle($titleInput);
         
@@ -237,6 +239,7 @@ class KanbanController extends AbstractController
     public function update(int $id, Request $request, KanbanTaskRepository $repository, EntityManagerInterface $em, \Symfony\Component\Validator\Validator\ValidatorInterface $validator): JsonResponse
     {
         /** @var User $user */
+        // Ensures only the user can edit their tasks
         $user = $this->getUser();
         
         // Find task owned by this user (including soft-deleted ones)

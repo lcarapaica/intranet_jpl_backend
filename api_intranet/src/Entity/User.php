@@ -12,7 +12,7 @@ use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
 /**
  * @ORM\Entity(repositoryClass=UserRepository::class)
  * @ORM\Table(name="`user`")
- * @UniqueEntity(fields={"email"}, message="Este correo ya está registrado.")
+ * @UniqueEntity(fields={"email"}, message="This email is already registered.")
  */
 class User implements UserInterface
 {
@@ -25,22 +25,22 @@ class User implements UserInterface
 
     /**
      * @ORM\Column(type="string", length=180, unique=true)
-     * @Assert\NotBlank(message="El email es obligatorio")
-     * @Assert\Email(message="El email '{{ value }}' no es un correo válido.")
-     * @Assert\Length(max=180, maxMessage="El email no puede tener más de {{ limit }} caracteres")
+     * @Assert\NotBlank(message="Email is required")
+     * @Assert\Email(message="The email '{{ value }}' is not a valid email.")
+     * @Assert\Length(max=180, maxMessage="The email cannot be longer than {{ limit }} characters")
      */
     private $email;
 
     /**
      * @ORM\Column(type="string", length=100)
-     * @Assert\NotBlank(message="El nombre es obligatorio")
-     * @Assert\Length(max=100, maxMessage="El nombre no puede tener más de {{ limit }} caracteres")
+     * @Assert\NotBlank(message="First name is required")
+     * @Assert\Length(max=100, maxMessage="First name cannot be longer than {{ limit }} characters")
      */
     private $name;
     /**
      * @ORM\Column(type="string", length=100)
-     * @Assert\NotBlank(message="El apellido es obligatorio")
-     * @Assert\Length(max=100, maxMessage="El apellido no puede tener más de {{ limit }} caracteres")
+     * @Assert\NotBlank(message="Last name is required")
+     * @Assert\Length(max=100, maxMessage="Last name cannot be longer than {{ limit }} characters")
      */
     private $surname;
 

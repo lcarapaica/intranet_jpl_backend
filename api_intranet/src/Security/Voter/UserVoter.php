@@ -21,23 +21,25 @@ class UserVoter extends Voter
         $this->security = $security;
     }
 
+    // Checks if this voter supports the requested action and target object
     protected function supports(string $attribute, $subject): bool
     {
         return in_array($attribute, [self::EDIT, self::DELETE, self::EDIT_ROLES])
             && $subject instanceof User;
     }
-
+  
+    // Decides if the logged-in user has permission for the supported action
     protected function voteOnAttribute(string $attribute, $subject, TokenInterface $token): bool
     {
         $user = $token->getUser();
 
-        // Must be authenticated
+        // Ensures the user is logged in
         if (!$user instanceof UserInterface) {
             error_log("[UserVoter] Denied: user is not authenticated.");
             return false;
         }
 
-        // Token user must be our concrete App\Entity\User to call getId() / getRoles()
+        // Ensures the logged-in user is our custom User entity
         if (!$user instanceof User) {
             error_log("[UserVoter] Denied: token user is not App\\Entity\\User.");
             return false;
@@ -46,12 +48,13 @@ class UserVoter extends Voter
         /** @var User $targetUser */
         $targetUser = $subject;
 
-        // Super Admin gets unconditional access for all voter attributes
+        // Super Admin gets automatic access to all actions
         if (in_array('ROLE_SUPER_ADMIN', $user->getRoles())) {
             error_log("[UserVoter] Granted: {$user->getEmail()} is ROLE_SUPER_ADMIN.");
             return true;
         }
 
+        // Routes the action to the correct permission check helper method
         $result = false;
         switch ($attribute) {
             case self::EDIT:

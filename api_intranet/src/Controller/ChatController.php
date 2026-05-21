@@ -65,6 +65,7 @@ class ChatController extends AbstractController
         $currentUser = $this->getUser(); // Obtains the current user
         $data = json_decode($request->getContent(), true); // Retrieves the name, type and participants of the conversation.
 
+        // Extract and filter the list of participant IDs from the request data.
         $participantIds = $data['participantIds'] ?? [];
         $type = $data['type'] ?? (count($participantIds) > 1 ? 'group' : 'private'); // Defaults to a private chat if 2 participants, group for more.
         $name = $data['name'] ?? null; // Group name is optional
@@ -88,11 +89,13 @@ class ChatController extends AbstractController
                 return $this->json(['id' => $existing->getId(), 'message' => 'La conversación ya existe'], 200);
             }
 
+            // Verify that the recipient exists in the database
             $recipient = $userRepository->find($recipientId);
             if (!$recipient) {
                 return $this->json(['error' => 'Destinatario no encontrado'], 404);
             }
 
+            // Initialize a new private conversation and create the participation records for both users.
             $conversation = new Conversation();
             $conversation->setType('private');
 
@@ -106,6 +109,7 @@ class ChatController extends AbstractController
             $p2->setRole('member');
             $conversation->addParticipant($p2);
 
+            // Persist the newly created private conversation and its participant relationships.
             $em->persist($conversation);
             $em->persist($p1);
             $em->persist($p2);
@@ -121,6 +125,7 @@ class ChatController extends AbstractController
             $conversation->addParticipant($pSelf);
             $em->persist($pSelf);
 
+            // Iterate through the provided participant IDs and add active users to the group.
             foreach ($participantIds as $pId) {
                 $user = $userRepository->find($pId);
                 if ($user) {
@@ -134,6 +139,7 @@ class ChatController extends AbstractController
             $em->persist($conversation);
         }
 
+        // Save all changes, persisting the new conversation and participants in the database.
         $em->flush();
 
         return $this->json([
@@ -160,13 +166,18 @@ class ChatController extends AbstractController
      */
     public function listConversations(ConversationRepository $convRepo): JsonResponse
     {
+        // Retrieve the currently authenticated user from the security context.
         /** @var User $user */
         $user = $this->getUser();
+
+        // Retrieve all conversations that the current user is participating in.
         $conversations = $convRepo->findAllForUser($user->getId());
 
+        // Build the response payload containing details for each conversation.
         $data = [];
         foreach ($conversations as $conv) {
             $participants = [];
+            // Gather participant details, excluding the current user in private chats for cleaner response.
             foreach ($conv->getParticipants() as $p) {
                 if ($p->getUser()->getId() !== $user->getId() || $conv->getType() === 'group') {
                     $participants[] = [
@@ -185,6 +196,7 @@ class ChatController extends AbstractController
             ];
         }
 
+        // Return the formatted list of conversations as a JSON response.
         return $this->json($data);
     }
 
@@ -233,6 +245,8 @@ class ChatController extends AbstractController
     {
         /** @var User $user */
         $user = $this->getUser();
+
+        // Find the conversation by its ID, returning a 404 error if not found.
         $conversation = $convRepo->find($id);
 
         if (!$conversation) {
@@ -252,6 +266,7 @@ class ChatController extends AbstractController
             return $this->json(['error' => 'No eres un participante en esta conversación'], 403);
         }
 
+        // Decode and validate the incoming request body content.
         $data = json_decode($request->getContent(), true);
         $content = $data['message'] ?? '';
 
@@ -259,6 +274,7 @@ class ChatController extends AbstractController
             return $this->json(['error' => 'El contenido del mensaje no puede estar vacío'], 400);
         }
 
+        // Create a new message instance, set its fields, and update the conversation timestamp.
         $chatMessage = new ChatMessage();
         $chatMessage->setContent($content);
         $chatMessage->setSender($user);
@@ -273,9 +289,11 @@ class ChatController extends AbstractController
             }
         }
 
+        // Save the new message and update conversation participants in the database.
         $em->persist($chatMessage);
         $em->flush();
 
+        // Construct the message payload to be sent over Mercure and returned in the HTTP response.
         $payload = [
             'id' => $chatMessage->getId(),
             'conversationId' => $conversation->getId(),
@@ -285,6 +303,7 @@ class ChatController extends AbstractController
             'timestamp' => $chatMessage->getCreatedAt()->format('c')
         ];
 
+        // Publish the real-time update to the Mercure hub for the active conversation topic.
         $update = new Update(
             "conversations/{$conversation->getId()}",
             json_encode($payload),
@@ -334,6 +353,8 @@ class ChatController extends AbstractController
     {
         /** @var User $user */
         $user = $this->getUser();
+
+        // Find the conversation by ID, or return 404 if it does not exist.
         $conversation = $convRepo->find($id);
 
         if (!$conversation) {
@@ -353,12 +374,14 @@ class ChatController extends AbstractController
             return $this->json(['error' => 'Acceso denegado'], 403);
         }
 
+        // Retrieve the latest active messages in chronological order, capped at 50.
         $messages = $repository->findBy(
             ['conversation' => $conversation, 'deletedAt' => null],
             ['createdAt' => 'ASC'],
             50
         );
 
+        // Format the history payload including message IDs, senders, text, and timestamps.
         $data = [];
         foreach ($messages as $msg) {
             $data[] = [
@@ -417,6 +440,7 @@ class ChatController extends AbstractController
      */
     public function updateMessage(int $id, Request $request, ChatMessageRepository $repository, EntityManagerInterface $em, HubInterface $hub): JsonResponse
     {
+        // Locate the target message by its ID, returning 404 if not found.
         $chatMessage = $repository->find($id);
 
         if (!$chatMessage) {
@@ -426,16 +450,33 @@ class ChatController extends AbstractController
         /** @var User $user */
         $user = $this->getUser();
 
+        // Ensure only the sender of the message can edit it
         if ($chatMessage->getSender() !== $user) {
             return $this->json(['error' => 'No autorizado'], 403);
         }
 
+        // Verify current user is a participant of the conversation
+        $conversation = $chatMessage->getConversation();
+        $isParticipant = false;
+        foreach ($conversation->getParticipants() as $p) {
+            if ($p->getUser()->getId() === $user->getId()) {
+                $isParticipant = true;
+                break;
+            }
+        }
+
+        if (!$isParticipant) {
+            return $this->json(['error' => 'No eres parte de la conversación'], 403);
+        }
+
+        // Enforce the business rule restricting message edits to a 30-minute window.
         $now = new \DateTime();
         $diff = $now->getTimestamp() - $chatMessage->getCreatedAt()->getTimestamp();
         if ($diff > (30 * 60)) {
             return $this->json(['error' => 'La ventana de tiempo para editar ha expirado'], 403);
         }
 
+        // Extract and validate the updated message content from the request.
         $data = json_decode($request->getContent(), true);
         $newMessage = $data['message'] ?? '';
 
@@ -443,10 +484,12 @@ class ChatController extends AbstractController
             return $this->json(['error' => 'El contenido del mensaje no puede estar vacío'], 400);
         }
 
+        // Apply the edit, set the updated timestamp, and save the changes.
         $chatMessage->setContent($newMessage);
         $chatMessage->setUpdatedAt(new \DateTime());
         $em->flush();
 
+        // Broadcast the update notification to other conversation participants via Mercure.
         $payload = [
             'type' => 'message_updated',
             'id' => $id,
@@ -501,6 +544,7 @@ class ChatController extends AbstractController
      */
     public function deleteMessage(int $id, ChatMessageRepository $repository, EntityManagerInterface $em, HubInterface $hub): JsonResponse
     {
+        // Locate the target message in the database, returning 404 if not found.
         $chatMessage = $repository->find($id);
 
         if (!$chatMessage) {
@@ -510,6 +554,7 @@ class ChatController extends AbstractController
         /** @var User $user */
         $user = $this->getUser();
 
+        // Determine if the current user is an active participant in this conversation.
         $conversation = $chatMessage->getConversation();
         $isParticipant = false;
         foreach ($conversation->getParticipants() as $p) {
@@ -519,11 +564,20 @@ class ChatController extends AbstractController
             }
         }
 
-        $canDelete = ($chatMessage->getSender() === $user) || ($this->isGranted('ROLE_ADMIN') && $isParticipant);
-        if (!$canDelete) {
+        // Validate authorization: the user must be either the sender or a system administrator.
+        $isSender = ($chatMessage->getSender() === $user);
+        $isAdmin = $this->isGranted('ROLE_ADMIN');
+
+        if (!$isSender && !$isAdmin) {
             return $this->json(['error' => 'No autorizado'], 403);
         }
 
+        // Validate active participation: authorized users must still be part of the conversation.
+        if (!$isParticipant) {
+            return $this->json(['error' => 'No eres parte de la conversación'], 403);
+        }
+
+        // Perform a soft delete by storing the deletion timestamp and persisting it.
         $payload = [
             'type' => 'message_deleted',
             'id' => $id
@@ -532,6 +586,7 @@ class ChatController extends AbstractController
         $chatMessage->setDeletedAt(new \DateTime());
         $em->flush();
 
+        // Broadcast the message deletion notification to other participants via Mercure.
         try {
             $update = new Update(
                 "conversations/{$chatMessage->getConversation()->getId()}",
@@ -580,12 +635,15 @@ class ChatController extends AbstractController
     {
         /** @var User $user */
         $user = $this->getUser();
+
+        // Retrieve the conversation, ensuring it exists before hiding/deleting.
         $conversation = $convRepo->find($id);
 
         if (!$conversation) {
             return $this->json(['error' => 'Conversación no encontrada'], 404);
         }
 
+        // Verify that the current user is part of the conversation.
         $participant = null;
         foreach ($conversation->getParticipants() as $p) {
             if ($p->getUser()->getId() === $user->getId()) {
@@ -598,6 +656,7 @@ class ChatController extends AbstractController
             return $this->json(['error' => 'No eres un participante en esta conversación'], 403);
         }
 
+        // Perform a soft delete of the participation record, effectively hiding it from their view.
         $participant->setDeletedAt(new \DateTime());
         $em->flush();
 
@@ -656,12 +715,15 @@ class ChatController extends AbstractController
     {
         /** @var User $currentUser */
         $currentUser = $this->getUser();
+
+        // Find the target conversation, ensuring it exists.
         $conversation = $convRepo->find($id);
 
         if (!$conversation) {
             return $this->json(['error' => 'Conversación no encontrada'], 404);
         }
 
+        // Reject requests to add members to a private conversation.
         if ($conversation->getType() !== 'group') {
             return $this->json(['error' => 'No se pueden agregar participantes a una conversación privada'], 400);
         }
@@ -681,6 +743,7 @@ class ChatController extends AbstractController
             return $this->json(['error' => 'Solo los administradores de la conversación pueden agregar miembros'], 403);
         }
 
+        // Parse the payload, supporting both single 'userId' and array of 'userIds'.
         $data = json_decode($request->getContent(), true);
 
         $userIdInput = $data['userId'] ?? [];
@@ -697,6 +760,7 @@ class ChatController extends AbstractController
         $addedUsers = [];
         $failedUsers = [];
 
+        // Process each user ID, adding them if new or reactivating if they previously left.
         foreach ($userIds as $userId) {
             $targetUser = $userRepository->find($userId);
             if (!$targetUser) {
@@ -733,6 +797,7 @@ class ChatController extends AbstractController
             }
         }
 
+        // Apply and save all participant changes to the database.
         $em->flush();
 
         return $this->json([
@@ -787,16 +852,20 @@ class ChatController extends AbstractController
     {
         /** @var User $currentUser */
         $currentUser = $this->getUser();
+
+        // Retrieve the group conversation by ID, validating its existence.
         $conversation = $convRepo->find($id);
 
         if (!$conversation) {
             return $this->json(['error' => 'Conversación no encontrada'], 404);
         }
 
+        // Restrict kick operation strictly to group conversations.
         if ($conversation->getType() !== 'group') {
             return $this->json(['error' => 'No se pueden expulsar participantes de una conversación privada'], 400);
         }
 
+        // Block users from kicking themselves.
         if ($currentUser->getId() === $userId) {
             return $this->json(['error' => 'No puedes expulsarte a ti mismo. Por favor usa el endpoint de salir para abandonar la conversación'], 400);
         }
@@ -816,6 +885,7 @@ class ChatController extends AbstractController
             return $this->json(['error' => 'Solo los administradores de la conversación pueden expulsar miembros'], 403);
         }
 
+        // Locate the target participant record to be removed.
         $targetParticipant = null;
         foreach ($conversation->getParticipants() as $p) {
             if ($p->getUser()->getId() === $userId) {
@@ -828,6 +898,7 @@ class ChatController extends AbstractController
             return $this->json(['error' => 'Participante no encontrado en esta conversación'], 404);
         }
 
+        // Remove the participant relationship from the database.
         $em->remove($targetParticipant);
         $em->flush();
 
@@ -872,16 +943,20 @@ class ChatController extends AbstractController
     {
         /** @var User $currentUser */
         $currentUser = $this->getUser();
+
+        // Find the group conversation by ID, or return 404.
         $conversation = $convRepo->find($id);
 
         if (!$conversation) {
             return $this->json(['error' => 'Conversación no encontrada'], 404);
         }
 
+        // Disallow leaving private conversations, as those can only be hidden.
         if ($conversation->getType() !== 'group') {
             return $this->json(['error' => 'No se puede abandonar una conversación privada. Usa el endpoint de eliminar para ocultarla'], 400);
         }
 
+        // Locate the current user's participant entry.
         $targetParticipant = null;
         foreach ($conversation->getParticipants() as $p) {
             if ($p->getUser()->getId() === $currentUser->getId()) {
@@ -894,6 +969,7 @@ class ChatController extends AbstractController
             return $this->json(['error' => 'No eres un participante en esta conversación'], 403);
         }
 
+        // Delete the current user's membership and save changes.
         $em->remove($targetParticipant);
         $em->flush();
 
@@ -952,12 +1028,15 @@ class ChatController extends AbstractController
     {
         /** @var User $currentUser */
         $currentUser = $this->getUser();
+
+        // Find the group conversation by ID, or return 404 if missing.
         $conversation = $convRepo->find($id);
 
         if (!$conversation) {
             return $this->json(['error' => 'Conversación no encontrada'], 404);
         }
 
+        // Restrict role modification only to group conversations.
         if ($conversation->getType() !== 'group') {
             return $this->json(['error' => 'Los roles solo pueden ser actualizados en conversaciones grupales'], 400);
         }
@@ -977,6 +1056,7 @@ class ChatController extends AbstractController
             return $this->json(['error' => 'Solo los administradores de la conversación pueden promover o degradar miembros'], 403);
         }
 
+        // Parse the target role and validate it against the allowed list.
         $data = json_decode($request->getContent(), true);
         $newRole = $data['role'] ?? null;
 
@@ -984,6 +1064,7 @@ class ChatController extends AbstractController
             return $this->json(['error' => 'El rol debe ser admin o member'], 400);
         }
 
+        // Find the participant to promote/demote among active group members.
         $targetParticipant = null;
         foreach ($conversation->getParticipants() as $p) {
             if ($p->getUser()->getId() === $userId && $p->getDeletedAt() === null) {
@@ -1009,6 +1090,7 @@ class ChatController extends AbstractController
             }
         }
 
+        // Apply the updated role and flush the changes.
         $targetParticipant->setRole($newRole);
         $em->flush();
 
