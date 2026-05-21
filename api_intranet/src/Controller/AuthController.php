@@ -37,7 +37,7 @@ class AuthController extends AbstractController
      * @OA\Response(response=403, description="Insufficient permissions")
      * )
      */
-    public function register(Request $request, UserPasswordEncoderInterface $encoder, EntityManagerInterface $em, ValidatorInterface $validator, UserRepository $userRepository): JsonResponse
+    public function register(Request $request, UserPasswordEncoderInterface $encoder, EntityManagerInterface $em, ValidatorInterface $validator): JsonResponse
     {
         $data = json_decode($request->getContent(), true);
 
@@ -45,45 +45,39 @@ class AuthController extends AbstractController
             return new JsonResponse(['error' => 'Datos inválidos o JSON malformado'], 400);
         }
 
-        if (!isset($data['email']) || !isset($data['password']) || !isset($data['name']) || !isset($data['surname'])) {
-            return new JsonResponse(['error' => 'Email, nombre, apellido y password son obligatorios'], 400);
-        }
-
-        if (strlen($data['password']) < 6) {
-            return new JsonResponse(['error' => 'La contraseña debe tener al menos 6 caracteres'], 400);
-        }
-
         // Only admins and above can register users
         if (!$this->isGranted('ROLE_ADMIN')) {
             return new JsonResponse(['error' => 'No tienes permisos para registrar usuarios.'], 403);
         }
 
-        $role = $data['role'] ?? 'ROLE_USER';
+        // Populates request data into DTO
+        $dto = \App\Dto\RegisterInput::fromArray($data);
+
+        // Validates constraints using Symfony's Validator
+        $errors = $validator->validate($dto);
+        if (count($errors) > 0) {
+            $errorMessages = [];
+            foreach ($errors as $error) {
+                $errorMessages[] = $error->getMessage();
+            }
+            return new JsonResponse(['error' => implode(' ', $errorMessages)], 400);
+        }
+
+        $role = $dto->role ?? 'ROLE_USER';
 
         // Only a Super Admin can create Admin or Super Admin accounts
         if (in_array($role, ['ROLE_ADMIN', 'ROLE_SUPER_ADMIN']) && !$this->isGranted('ROLE_SUPER_ADMIN')) {
             return new JsonResponse(['error' => 'No tienes permisos para crear una cuenta con ese rol.'], 403);
         }
 
-        // Create user
-        $user = new User();
-        $user->setEmail($data['email']);
-        $user->setName($data['name']);
-        $user->setSurname($data['surname']);
-        $user->setRoles([$role]);
+        // Create and populate the User entity
+        $user = $dto->toEntity($encoder);
 
-        // Hash Password
-        $hashedPassword = $encoder->encodePassword($user, $data['password']);
-        $user->setPassword($hashedPassword);
-
-        // Force password change on first login since it's an admin creation
-        $user->setMustChangePassword(true);
-
-        // Validate user (checks constraints like UniqueEntity and Assert\Email)
-        $errors = $validator->validate($user);
-        if (count($errors) > 0) {
+        // Validate the entity (e.g. UniqueEntity check on the database)
+        $entityErrors = $validator->validate($user);
+        if (count($entityErrors) > 0) {
             $errorMessages = [];
-            foreach ($errors as $error) {
+            foreach ($entityErrors as $error) {
                 $errorMessages[] = $error->getMessage();
             }
             return new JsonResponse(['error' => implode(' ', $errorMessages)], 400);

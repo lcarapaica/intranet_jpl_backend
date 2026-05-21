@@ -4,6 +4,7 @@ namespace App\Controller;
 
 use App\Entity\User;
 use App\Repository\UserRepository;
+use App\Dto\UserFilterInput;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -35,35 +36,20 @@ class UserController extends AbstractController
      *     @OA\Response(response=401, description="Unauthorized")
      * )
      */
-    public function index(Request $request, UserRepository $repository): JsonResponse
+    // Returns a list of all the users that fit a criteria
+    public function index(Request $request, UserRepository $repository): JsonResponse 
     {
-        if (!$this->isGranted('ROLE_ADMIN')) {
+        // Role Check to list users, must be admin or above
+        if (!$this->isGranted('ROLE_ADMIN')) { 
             return $this->json(['error' => 'No tienes permisos para listar a los usuarios.'], 403);
         }
 
-        $search = $request->query->get('search', '');
-        $role = $request->query->get('role');
-        $page = $request->query->getInt('page', 1);
-        $limit = $request->query->getInt('limit', 25);
-        $sort = $request->query->get('sort', 'id');
-        $order = $request->query->get('order', 'DESC');
+        // Sanitize the URL via DTO
+        $filterInput = UserFilterInput::fromRequest($request, true);
 
-        $activeParam = $request->query->get('active');
-        $active = true; // Defaults to active so pagination limits aren't affected by mixed statuses
-        
-        if ($activeParam !== null && $activeParam !== '') {
-            $parsedActive = filter_var($activeParam, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
-            if ($parsedActive !== null) {
-                $active = $parsedActive;
-            }
-        }
+        // Fetch results from repository using the criteria array
+        $result = $repository->searchAndPaginate($filterInput->toArray());
 
-        // 2. Validate limit to prevent database stress
-        if (!in_array($limit, [10, 25, 50, 100])) {
-            $limit = 25;
-        }
-        // User must be admin to reach here, so they can see all users
-        $result = $repository->searchAndPaginate($search, $page, $limit, true, $role, $active, $sort, $order);
 
         return $this->json($result);
     }
@@ -94,8 +80,10 @@ class UserController extends AbstractController
      */
     public function show(int $id, UserRepository $repository): JsonResponse
     {
+        // Finds the user by their id
         $user = $repository->find($id);
 
+        // Checks if the user exists
         if (!$user) {
             return $this->json(['error' => 'Usuario no encontrado'], 404);
         }
@@ -105,7 +93,7 @@ class UserController extends AbstractController
             return $this->json(['error' => 'Usuario no encontrado'], 404);
         }
 
-
+        // Maps the user entity data into a clean array 
         $roles = $user->getRoles();
         $userData = [
             'id' => $user->getId(),
@@ -116,6 +104,7 @@ class UserController extends AbstractController
             'isActive' => $user->isActive(),
         ];
 
+        // Only admins can view if the user requires a password change or was deleted
         if ($this->isGranted('ROLE_ADMIN')) {
             $userData['mustChangePassword'] = $user->getMustChangePassword();
             $userData['deletedAt'] = $user->getDeletedAt() ? $user->getDeletedAt()->format('Y-m-d H:i:s') : null;
@@ -149,35 +138,27 @@ class UserController extends AbstractController
      */
     public function update(int $id, Request $request, UserRepository $repository, EntityManagerInterface $em, UserPasswordEncoderInterface $encoder, ValidatorInterface $validator): JsonResponse
     {
+        // Finds the user by their id
         $user = $repository->find($id);
-        // If the user doesn't exist, throw error
         if (!$user) {
             return $this->json(['error' => 'Usuario no encontrado'], 404);
         }
 
         // Checks if the user is able to edit the target user, if not blocks access
         $this->denyAccessUnlessGranted('USER_EDIT', $user);
+        
+        // Decode JSON payload from request body
         $content = $request->getContent();
         $data = json_decode($content, true);
-
         if ($content && $data === null) {
             return $this->json(['error' => 'Formato JSON inválido'], 400);
         }
-
         $data = $data ?: [];
 
-        // Maps array into DTO
-        $dto = new \App\Dto\UserUpdateDto();
-        $dto->email = $data['email'] ?? null;
-        $dto->name = $data['name'] ?? null;
-        $dto->surname = $data['surname'] ?? null;
-        $dto->roles = $data['roles'] ?? null;
-        $dto->password = $data['password'] ?? null;
+        // Maps array into DTO using static factory
+        $dto = \App\Dto\UserUpdate::fromArray($data);
 
-        // Track which fields were actually provided in the JSON body
-        $providedFields = array_keys($data);
-
-        // Validates data
+        // Validates DTO constraints
         $errors = $validator->validate($dto);
         if (count($errors) > 0) {
             $errorMessages = [];
@@ -190,37 +171,40 @@ class UserController extends AbstractController
         // Checks if user has permission to edit an user role
         $canEditRoles = $this->isGranted('USER_EDIT_ROLES', $user);
         if ($dto->roles !== null && !$canEditRoles) {
-            return $this->json([
-                'error' => 'No tienes permisos para modificar los roles de este usuario.'
-            ], 403);
+            return $this->json(['error' => 'No tienes permisos para modificar los roles de este usuario.'], 403);
         }
 
         // Check specifically for Super Admin promotion escalation
         $isTryingToGrantSuper = $dto->roles && in_array('ROLE_SUPER_ADMIN', $dto->roles);
         if ($isTryingToGrantSuper && !$this->isGranted('ROLE_SUPER_ADMIN')) {
-            return $this->json([
-                'error' => 'No tienes permisos para modificar los roles de este usuario o asignar el rango solicitado.'
-            ], 403);
+            return $this->json(['error' => 'No tienes permisos para modificar los roles de este usuario o asignar el rango solicitado.'], 403);
         }
 
-        $canChangeRoles = $canEditRoles;
-
-        //updates DB with values
         $authenticatedUser = $this->getUser();
         $isSelfUpdate = $authenticatedUser instanceof \App\Entity\User && $authenticatedUser->getId() === $user->getId();
 
         // Prevent Super Admins from demoting themselves and locking the database
         if ($isSelfUpdate && $dto->roles !== null && in_array('ROLE_SUPER_ADMIN', $user->getRoles()) && !in_array('ROLE_SUPER_ADMIN', $dto->roles)) {
-            return $this->json([
-                'error' => 'Por seguridad, no puedes remover tus propios permisos de Super Administrador.'
-            ], 403);
+            return $this->json(['error' => 'Por seguridad, no puedes remover tus propios permisos de Super Administrador.'], 403);
         }
 
+        // Updates user entity properties and persists to DB
         try {
-            $dto->updateEntity($user, $encoder, $canChangeRoles, $isSelfUpdate, $providedFields);
+            $dto->updateEntity($user, $encoder, $canEditRoles, $isSelfUpdate, array_keys($data));
         } catch (\InvalidArgumentException $e) {
             return $this->json(['error' => $e->getMessage()], 400);
         }
+
+        // Validate the entity itself (e.g. UniqueEntity check on the database for email uniqueness)
+        $entityErrors = $validator->validate($user);
+        if (count($entityErrors) > 0) {
+            $errorMessages = [];
+            foreach ($entityErrors as $error) {
+                $errorMessages[] = $error->getMessage();
+            }
+            return $this->json(['error' => implode(' ', $errorMessages)], 400);
+        }
+
         $em->flush();
 
         return $this->json(['message' => 'Usuario actualizado correctamente']);
@@ -240,8 +224,8 @@ class UserController extends AbstractController
      */
     public function delete(int $id, UserRepository $repository, EntityManagerInterface $em): JsonResponse
     {
+        // Finds the user by their id
         $user = $repository->find($id);
-        // If the user doesn't exist, throw error
         if (!$user) {
             return $this->json(['error' => 'Usuario no encontrado'], 404);
         }
@@ -254,13 +238,13 @@ class UserController extends AbstractController
             return $this->json(['error' => 'No puedes eliminarte a ti mismo por seguridad.'], 403);
         }
 
+        // Check if already deleted
         if (!$user->isActive()) {
-            return $this->json(['error' => 'that user is already deleted'], 400);
+            return $this->json(['error' => 'El usuario ya ha sido eliminado.'], 400);
         }
 
-        // Soft delete and append .deleted.timestamp to free up the email
-        $timestamp = time();
-        $user->setEmail($user->getEmail() . '.deleted.' . $timestamp);
+        // Soft delete and append .deleted.timestamp to free up the email address
+        $user->setEmail($user->getEmail() . '.deleted.' . time());
         $user->setDeletedAt(new \DateTime());
         $em->flush();
 
@@ -281,11 +265,13 @@ class UserController extends AbstractController
      */
     public function toggleActive(int $id, UserRepository $repository, EntityManagerInterface $em): JsonResponse
     {
+        // Finds the user by their id
         $user = $repository->find($id);
         if (!$user) {
             return $this->json(['error' => 'Usuario no encontrado'], 404);
         }
 
+        // Only admins can toggle activity status
         $this->denyAccessUnlessGranted('ROLE_ADMIN');
 
         // Prevent self-deactivation
@@ -294,12 +280,11 @@ class UserController extends AbstractController
         }
 
         if ($user->isActive()) {
-            // Deactivating: append .deleted.timestamp to email
-            $timestamp = time();
-            $user->setEmail($user->getEmail() . '.deleted.' . $timestamp);
+            // Deactivating: append .deleted.timestamp to email to free it up
+            $user->setEmail($user->getEmail() . '.deleted.' . time());
             $user->setDeletedAt(new \DateTime());
         } else {
-            // Activating: check if original email is free
+            // Activating: recover original email and check availability
             $originalEmail = preg_replace('/\.deleted\.\d+$/', '', $user->getEmail());
 
             $existingUser = $repository->findOneBy(['email' => $originalEmail]);
@@ -316,7 +301,7 @@ class UserController extends AbstractController
         $em->flush();
 
         return $this->json([
-            'message' => $user->isActive() ? 'Usuario activado' : 'Usuario desactivado',
+            'message'  => $user->isActive() ? 'Usuario activado' : 'Usuario desactivado',
             'isActive' => $user->isActive()
         ]);
     }

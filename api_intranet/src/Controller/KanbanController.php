@@ -46,8 +46,10 @@ class KanbanController extends AbstractController
         /** @var User $user */
         $user = $this->getUser();
 
+        // Retrieve only tasks owned by the authenticated user
         $tasks = $repository->findBy(['owner' => $user], ['createdAt' => 'DESC']);
 
+        // Return the tasks serialized with the kanban
         return $this->json($tasks, 200, [], ['groups' => 'kanban:read']);
     }
 
@@ -90,10 +92,12 @@ class KanbanController extends AbstractController
         $user = $this->getUser();
         $data = json_decode($request->getContent(), true);
 
+        // Title validation check=
         if (empty($data['title'])) {
             return $this->json(['error' => 'El título es obligatorio'], 400);
         }
 
+        // Initialize task entity and populate with defaults if keys are missing
         $task = new KanbanTask();
         $task->setTitle($data['title']);
         $task->setCategory($data['category'] ?? 'General');
@@ -144,6 +148,7 @@ class KanbanController extends AbstractController
     public function update(int $id, Request $request, KanbanTaskRepository $repository, EntityManagerInterface $em): JsonResponse
     {
         /** @var User $user */
+        // Ensures only the user can edit their tasks
         $user = $this->getUser();
         $task = $repository->findOneBy(['id' => $id, 'owner' => $user]);
 
@@ -153,6 +158,7 @@ class KanbanController extends AbstractController
 
         $data = json_decode($request->getContent(), true);
 
+        // Perform partial updates only for properties present in the request body
         if (isset($data['title'])) $task->setTitle($data['title']);
         if (isset($data['category'])) $task->setCategory($data['category']);
         if (isset($data['importance'])) $task->setImportance($data['importance']);
@@ -180,6 +186,8 @@ class KanbanController extends AbstractController
     {
         /** @var User $user */
         $user = $this->getUser();
+        
+        // Ensures users can only delete their own tasks
         $task = $repository->findOneBy(['id' => $id, 'owner' => $user]);
 
         if (!$task) {

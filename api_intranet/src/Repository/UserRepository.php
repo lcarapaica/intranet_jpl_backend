@@ -11,12 +11,9 @@ use Symfony\Component\Security\Core\User\UserInterface;
 use Doctrine\ORM\Tools\Pagination\Paginator;
 
 /**
- * @extends ServiceEntityRepository<User>
- *
- * @method User|null find($id, $lockMode = null, $lockVersion = null)
- * @method User|null findOneBy(array $criteria, array $orderBy = null)
- * @method User[]    findAll()
- * @method User[]    findBy(array $criteria, array $orderBy = null, $limit = null, $offset = null)
+ * UserRepository
+ * 
+ * Manages database queries for the User table.
  */
 class UserRepository extends ServiceEntityRepository implements PasswordUpgraderInterface
 {
@@ -26,7 +23,7 @@ class UserRepository extends ServiceEntityRepository implements PasswordUpgrader
     }
 
     /**
-     * Used to upgrade (rehash) the user's password automatically over time.
+     * Automatically updates and rehashes the user password over time when needed.
      */
     public function upgradePassword(UserInterface $user, string $newHashedPassword): void
     {
@@ -34,33 +31,51 @@ class UserRepository extends ServiceEntityRepository implements PasswordUpgrader
             throw new UnsupportedUserException(sprintf('Instances of "%s" are not supported.', \get_class($user)));
         }
 
-        //saves the new hashed password to DB
         $user->setPassword($newHashedPassword);
         $this->_em->persist($user);
         $this->_em->flush();
     }
-    public function searchAndPaginate($term, $page = 1, $limit = 25, bool $hasAdminAccess = false, ?string $role = null, ?bool $active = null, $sort = 'id', $order = 'DESC')
+
+    /**
+     * Filters, searches, and paginates the users list based on criteria array.
+     */
+    public function searchAndPaginate(array $criteria): array
     {
+        // Set fallback default values for missing keys
+        $criteria = array_merge([
+            'search'         => '',
+            'page'           => 1,
+            'limit'          => 25,
+            'hasAdminAccess' => false,
+            'role'           => null,
+            'active'         => true,
+            'sort'           => 'id',
+            'order'          => 'DESC',
+        ], $criteria);
+
+        // Prepares array keys as local variables ($search, $page, $limit, etc.)
+        $criteria['search'] = trim($criteria['search']);
+        extract($criteria);
+        
+        // Start building the query with alias 'u'
         $qb = $this->createQueryBuilder('u');
 
-        // Activity Filter
-        if ($active === true) {
+        // Activity filter: non-admins are forced to only see active records
+        if (!$hasAdminAccess || $active === true) {
             $qb->andWhere('u.deletedAt IS NULL');
         } elseif ($active === false) {
             $qb->andWhere('u.deletedAt IS NOT NULL');
-        } elseif (!$hasAdminAccess) {
-            $qb->andWhere('u.deletedAt IS NULL');
         }
 
-        //  Primary role (category) filter:
+        // Role category filter
         if ($role !== null && $role !== '') {
             $qb->andWhere('u.roles LIKE :role')
                 ->setParameter('role', '%"' . $role . '"%');
         }
 
-        // Multi-word search term filter
-        if ($term) {
-            $words = explode(' ', $term);
+        // Multi-word search matching email, name, or surname
+        if (!empty($search)) {
+            $words = explode(' ', $search);
             $i = 0;
             foreach ($words as $word) {
                 $word = trim($word);
@@ -78,7 +93,7 @@ class UserRepository extends ServiceEntityRepository implements PasswordUpgrader
             }
         }
 
-        // Dynamic Sorting
+        // Dynamic sorting with a safe field whitelist check
         $allowedFields = ['id', 'email', 'name', 'surname'];
         if (!in_array($sort, $allowedFields)) {
             $sort = 'id';
@@ -86,26 +101,29 @@ class UserRepository extends ServiceEntityRepository implements PasswordUpgrader
         $order = strtoupper($order) === 'ASC' ? 'ASC' : 'DESC';
         $qb->orderBy('u.' . $sort, $order);
 
-        // Apply Pagination
+        // Calculate offset limits for SQL pagination
         $qb->setFirstResult(($page - 1) * $limit)
             ->setMaxResults($limit);
 
+        // Use Doctrine Paginator to calculate accurate totals
         $paginator = new Paginator($qb);
         $totalItems = count($paginator);
         $totalPages = ceil((int)$totalItems / $limit);
 
+        // Map database objects into a clean associative array
         $data = [];
         foreach ($paginator as $user) {
             $roles = $user->getRoles();
             $userArray = [
-                'id' => $user->getId(),
-                'email' => $user->getEmail(),
-                'name' => $user->getName(),
-                'surname' => $user->getSurname(),
-                'role' => count($roles) > 0 ? $roles[0] : 'ROLE_USER',
+                'id'       => $user->getId(),
+                'email'    => $user->getEmail(),
+                'name'     => $user->getName(),
+                'surname'  => $user->getSurname(),
+                'role'     => count($roles) > 0 ? $roles[0] : 'ROLE_USER',
                 'isActive' => $user->isActive(),
             ];
 
+            // Only add deletedAt field if current visitor has admin privileges
             if ($hasAdminAccess) {
                 $userArray['deletedAt'] = $user->getDeletedAt() ? $user->getDeletedAt()->format('Y-m-d H:i:s') : null;
             }
@@ -113,13 +131,14 @@ class UserRepository extends ServiceEntityRepository implements PasswordUpgrader
             $data[] = $userArray;
         }
 
+        // Return structured dataset paired with standard pagination metrics
         return [
             'data' => $data,
             'meta' => [
-                'total_items' => $totalItems,
-                'total_pages' => (int)$totalPages,
+                'total_items'  => $totalItems,
+                'total_pages'  => (int)max(1, $totalPages),
                 'current_page' => (int)$page,
-                'limit' => (int)$limit
+                'limit'        => (int)$limit
             ]
         ];
     }

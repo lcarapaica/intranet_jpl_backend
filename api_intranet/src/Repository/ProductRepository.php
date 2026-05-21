@@ -14,13 +14,29 @@ class ProductRepository extends ServiceEntityRepository
         parent::__construct($registry, Product::class);
     }
 
-    //function handling search field and pagination
-    public function searchAndPaginate($term, $page = 1, $limit = 25, ?string $empresa = null, ?bool $active = null, $sort = 'id', $order = 'DESC')
+    // Filters, searches, and paginates the products list based on criteria array
+    public function searchAndPaginate(array $criteria): array
     {
+        // Set fallback default values for missing keys
+        $criteria = array_merge([
+            'search'             => '',
+            'page'               => 1,
+            'limit'              => 25,
+            'empresa'            => null,
+            'active'             => true,
+            'sort'               => 'id',
+            'order'              => 'DESC',
+            'hasLogisticsAccess' => true,
+        ], $criteria);
+
+        // Prepares array keys as local variables ($search, $page, $limit, etc.)
+        $criteria['search'] = trim($criteria['search']);
+        extract($criteria);
+
         $qb = $this->createQueryBuilder('p');
 
-        // 1. Activity Filter
-        if ($active === true) {
+        // 1. Activity Filter: non-logistics are forced to only see active records
+        if (!$hasLogisticsAccess || $active === true) {
             $qb->andWhere('p.deletedAt IS NULL');
         } elseif ($active === false) {
             $qb->andWhere('p.deletedAt IS NOT NULL');
@@ -33,8 +49,8 @@ class ProductRepository extends ServiceEntityRepository
         }
 
         // 3. Multi-word Incremental Search 
-        if ($term !== null && $term !== '') {
-            $words = explode(' ', $term);
+        if ($search !== '') {
+            $words = explode(' ', $search);
             $i = 0;
             foreach ($words as $word) {
                 $word = trim($word);
@@ -78,20 +94,20 @@ class ProductRepository extends ServiceEntityRepository
         $data = [];
         foreach ($paginator as $product) {
             $productArray = [
-                'id' => $product->getId(),
-                'nombre' => $product->getNombre(),
-                'categoria' => $product->getCategoria(),
-                'marca' => $product->getMarca(),
-                'modelo' => $product->getModelo(),
+                'id'              => $product->getId(),
+                'nombre'          => $product->getNombre(),
+                'categoria'       => $product->getCategoria(),
+                'marca'           => $product->getMarca(),
+                'modelo'          => $product->getModelo(),
                 'caracteristicas' => $product->getCaracteristicas(),
-                'color' => $product->getColor(),
-                'serial' => $product->getSerial(),
-                'condicion' => $product->getCondicion(),
-                'locacion' => $product->getLocacion(),
-                'cantidad' => $product->getCantidad(),
-                'empresa' => $product->getEmpresa(),
-                'registeredAt' => $product->getRegisteredAt() ? $product->getRegisteredAt()->format('Y-m-d') : null,
-                'isActive' => $product->isActive(),
+                'color'           => $product->getColor(),
+                'serial'          => $product->getSerial(),
+                'condicion'       => $product->getCondicion(),
+                'locacion'        => $product->getLocacion(),
+                'cantidad'        => $product->getCantidad(),
+                'empresa'         => $product->getEmpresa(),
+                'registeredAt'    => $product->getRegisteredAt() ? $product->getRegisteredAt()->format('Y-m-d') : null,
+                'isActive'        => $product->isActive(),
             ];
 
             // If deletedAt is present, include it in response
@@ -107,10 +123,10 @@ class ProductRepository extends ServiceEntityRepository
         return [
             'data' => $data,
             'meta' => [
-                'total_items' => $totalItems,
-                'total_pages' => $totalPages,
+                'total_items'  => $totalItems,
+                'total_pages'  => $totalPages,
                 'current_page' => (int) $page,
-                'limit' => (int) $limit
+                'limit'        => (int) $limit
             ]
         ];
     }
