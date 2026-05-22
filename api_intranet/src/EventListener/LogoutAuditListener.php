@@ -35,7 +35,6 @@ class LogoutAuditListener
     /**
      * Fires BEFORE the controller on POST /api/logout.
      * Looks up the refresh token and stashes the username and token string
-     * in request attributes so they survive after the token is deleted.
      */
     public function onKernelRequest(RequestEvent $event): void
     {

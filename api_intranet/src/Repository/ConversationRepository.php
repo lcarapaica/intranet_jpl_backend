@@ -33,7 +33,8 @@ class ConversationRepository extends ServiceEntityRepository
             ->andWhere('p2.user = :userB')
             ->setParameter('type', 'private')
             ->setParameter('userA', $userAId)
-            ->setParameter('userB', $userBId);
+            ->setParameter('userB', $userBId)
+            ->setMaxResults(1);
 
         return $qb->getQuery()->getOneOrNullResult();
     }

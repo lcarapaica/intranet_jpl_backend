@@ -29,7 +29,7 @@ class DatabaseActivitySubscriber implements EventSubscriber
         return [
             Events::postPersist,
             Events::postUpdate,
-            Events::postRemove,
+            Events::preRemove,
         ];
     }
 
@@ -43,7 +43,7 @@ class DatabaseActivitySubscriber implements EventSubscriber
         $this->logActivity('EDIT', $args);
     }
 
-    public function postRemove(LifecycleEventArgs $args): void
+    public function preRemove(LifecycleEventArgs $args): void
     {
         $this->logActivity('DELETE', $args);
     }
@@ -95,6 +95,11 @@ class DatabaseActivitySubscriber implements EventSubscriber
                 $action = 'RECOVER';
             }
             
+            // Censor sensitive fields (like hashed passwords) to protect security
+            if (isset($changes['password'])) {
+                $changes['password'] = ['[REDACTED]', '[REDACTED]'];
+            }
+            
             $log->setAction($action);
             $log->setDetails($changes);
         }
@@ -103,17 +108,38 @@ class DatabaseActivitySubscriber implements EventSubscriber
         if ($action === 'CREATE' || $action === 'DELETE' || $action === 'RECOVER') {
             $data = $log->getDetails() ?: [];
             
-            // For CREATE, let's capture ALL current field values
-            if ($action === 'CREATE' && $entityManager instanceof EntityManagerInterface) {
+            if ($entityManager instanceof EntityManagerInterface) {
                 $meta = $entityManager->getClassMetadata(get_class($entity));
+                
+                // Capture all basic database fields (strings, ints, datetimes, etc.)
                 foreach ($meta->getFieldNames() as $fieldName) {
+                    if ($fieldName === 'password') {
+                        $data[$fieldName] = '[REDACTED]';
+                        continue;
+                    }
                     $getter = 'get' . ucfirst($fieldName);
                     if (method_exists($entity, $getter)) {
-                        $data[$fieldName] = $entity->$getter();
+                        $val = $entity->$getter();
+                        if ($val instanceof \DateTimeInterface) {
+                            $data[$fieldName] = $val->format('Y-m-d H:i:s');
+                        } else {
+                            $data[$fieldName] = $val;
+                        }
+                    }
+                }
+                
+                // Capture foreign key / relation IDs (e.g. user_id, conversation_id)
+                foreach ($meta->getAssociationNames() as $assocName) {
+                    $getter = 'get' . ucfirst($assocName);
+                    if (method_exists($entity, $getter)) {
+                        $associatedEntity = $entity->$getter();
+                        if ($associatedEntity && method_exists($associatedEntity, 'getId')) {
+                            $data[$assocName . '_id'] = $associatedEntity->getId();
+                        }
                     }
                 }
             } else {
-                // For DELETE/RECOVER, keep the basic identifying fields
+                // Fallback if EntityManager is not available
                 if (method_exists($entity, 'getEmail')) $data['email'] = $entity->getEmail();
                 if (method_exists($entity, 'getName')) $data['name'] = $entity->getName();
                 if (method_exists($entity, 'getNombre')) $data['nombre'] = $entity->getNombre();
@@ -125,9 +151,6 @@ class DatabaseActivitySubscriber implements EventSubscriber
         }
 
         $entityManager->persist($log);
-        // Important: We need to use a separate flush to avoid recursion issues in some Doctrine versions,
-        // but in postPersist/postUpdate, the transaction is often still open.
-        // A common trick is to use a dedicated "logging" EntityManager or just flush the log entity specifically.
         $entityManager->flush($log);
     }
 }
