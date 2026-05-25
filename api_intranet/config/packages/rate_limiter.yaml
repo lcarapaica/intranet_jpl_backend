@@ -1,0 +1,11 @@
+framework:
+    rate_limiter:
+        login_limiter:
+            policy: 'fixed_window'
+            limit: 6
+            interval: '1 minute'
+
+        api_limiter:
+            policy: 'sliding_window'
+            limit: 100
+            interval: '1 minute'

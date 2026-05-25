@@ -54,3 +54,11 @@ services:
     App\EventListener\PasswordCheckAuditListener:
         tags:
             - { name: kernel.event_listener, event: kernel.response, method: onKernelResponse }
+
+    App\EventListener\RateLimitListener:
+        arguments:
+            $loginLimiter: '@limiter.login_limiter'
+            $apiLimiter: '@limiter.api_limiter'
+        tags:
+            - { name: kernel.event_listener, event: kernel.request, priority: 10 }
+
