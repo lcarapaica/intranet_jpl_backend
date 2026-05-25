@@ -381,9 +381,9 @@ class KanbanController extends AbstractController
     /**
      * Toggle active status of a personal task.
      * 
-     * @Route("/{id}/toggle-active", name="toggle_active", methods={"POST"}, requirements={"id"="\d+"})
+     * @Route("/{id}/toggle-active", name="toggle_active", methods={"PATCH"}, requirements={"id"="\d+"})
      * 
-     * @OA\Post(
+     * @OA\Patch(
      *     summary="Toggles the active state of a user's task between active and soft-deleted",
      *     tags={"Kanban Board"},
      *     @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),

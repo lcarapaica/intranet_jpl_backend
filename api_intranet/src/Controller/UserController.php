@@ -252,8 +252,8 @@ class UserController extends AbstractController
     }
 
     /**
-     * @Route("/{id}/toggle-active", methods={"POST"})
-     * @OA\Post(
+     * @Route("/{id}/toggle-active", methods={"PATCH"})
+     * @OA\Patch(
      *     path="/api/users/{id}/toggle-active",
      *     summary="Toggle user active status (soft delete/restore)",
      *     tags={"Usuarios"},

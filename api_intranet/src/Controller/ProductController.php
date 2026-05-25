@@ -418,8 +418,8 @@ class ProductController extends AbstractController
     }
 
     /**
-     * @Route("/{id}/toggle-active", methods={"POST"})
-     * @OA\Post(
+     * @Route("/{id}/toggle-active", methods={"PATCH"})
+     * @OA\Patch(
      *     path="/api/products/{id}/toggle-active",
      *     summary="Toggle product active/inactive status",
      *     tags={"Productos"},
