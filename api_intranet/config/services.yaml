@@ -62,3 +62,10 @@ services:
         tags:
             - { name: kernel.event_listener, event: kernel.request, priority: 10 }
 
+    App\EventListener\SecurityHeadersListener:
+        arguments:
+            $env: '%kernel.environment%'
+        tags:
+            - { name: kernel.event_listener, event: kernel.response, method: onKernelResponse }
+
+
