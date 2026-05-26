@@ -13,4 +13,8 @@
 /config/jwt/*.pem
 ###< lexik/jwt-authentication-bundle ###
 
+# Google Meet API Secrets
+/config/secrets/google-credentials.json
+/config/secrets/token.json
+
 .env

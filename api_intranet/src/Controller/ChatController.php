@@ -1099,4 +1099,110 @@ class ChatController extends AbstractController
             'message' => sprintf('Rol de usuario actualizado a %s exitosamente', $newRole)
         ]);
     }
+
+    /**
+     * Creates a Google Meet video call space for this conversation and broadcasts it to participants.
+     * 
+     * @Route("/conversations/{id}/meet", name="start_meet_call", methods={"POST"})
+     * 
+     * @OA\Post(
+     *     path="/api/chat/conversations/{id}/meet",
+     *     summary="Create a Google Meet call space inside a conversation context",
+     *     tags={"Mensajeria"},
+     *     @OA\Parameter(
+     *         name="id",
+     *         in="path",
+     *         description="ID de la conversación",
+     *         required=true,
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\Response(
+     *         response=201,
+     *         description="Llamada de Meet creada exitosamente y publicada mediante Mercure"
+     *     ),
+     *     @OA\Response(
+     *         response=403,
+     *         description="El usuario no participa en esta conversación"
+     *     ),
+     *     @OA\Response(
+     *         response=404,
+     *         description="Conversación no encontrada"
+     *     )
+     * )
+     */
+    public function startMeetCall(int $id, ConversationRepository $convRepo, \App\Service\GoogleMeetService $meetService, EntityManagerInterface $em, \Symfony\Component\Mercure\HubInterface $hub): JsonResponse
+    {
+        /** @var User $currentUser */
+        $currentUser = $this->getUser();
+
+        $conversation = $convRepo->find($id);
+        if (!$conversation) {
+            return $this->json(['error' => 'Conversación no encontrada'], 404);
+        }
+
+        // Verify participation
+        $isParticipant = false;
+        $attendeeEmails = [];
+        foreach ($conversation->getParticipants() as $p) {
+            if ($p->getDeletedAt() === null) {
+                $attendeeEmails[] = $p->getUser()->getEmail();
+                if ($p->getUser()->getId() === $currentUser->getId()) {
+                    $isParticipant = true;
+                }
+            }
+        }
+
+        if (!$isParticipant) {
+            return $this->json(['error' => 'No eres un participante en esta conversación'], 403);
+        }
+
+        // Create the Google Meet space
+        $title = sprintf("Videollamada - %s", $conversation->getName() ?: "Chat " . $conversation->getId());
+        $meetUrl = $meetService->createSpace($title, $attendeeEmails);
+
+        // Record a system message in the chat database
+        $msgContent = sprintf("Videollamada de Google Meet iniciada. Únete aquí: %s", $meetUrl);
+        
+        $chatMessage = new ChatMessage();
+        $chatMessage->setContent($msgContent);
+        $chatMessage->setSender($currentUser);
+        $chatMessage->setConversation($conversation);
+        $conversation->setUpdatedAt(new \DateTime());
+
+        // Restore/unhide conversation for any participant who deleted/hid it previously
+        foreach ($conversation->getParticipants() as $p) {
+            if ($p->getDeletedAt() !== null) {
+                $p->setDeletedAt(null);
+            }
+        }
+
+        $em->persist($chatMessage);
+        $em->flush();
+
+        // Broadcast to Mercure hub
+        $payload = [
+            'type' => 'meet_call_started',
+            'id' => $chatMessage->getId(),
+            'conversationId' => $conversation->getId(),
+            'senderId' => $currentUser->getId(),
+            'senderName' => $currentUser->getDisplayName(),
+            'message' => $msgContent,
+            'meetUrl' => $meetUrl,
+            'timestamp' => $chatMessage->getCreatedAt()->format('c')
+        ];
+
+        $update = new \Symfony\Component\Mercure\Update(
+            "conversations/{$conversation->getId()}",
+            json_encode($payload),
+            true
+        );
+
+        try {
+            $hub->publish($update);
+        } catch (\Exception $e) {
+            error_log('Mercure meeting publish failed: ' . $e->getMessage());
+        }
+
+        return $this->json($payload, 201);
+    }
 }
