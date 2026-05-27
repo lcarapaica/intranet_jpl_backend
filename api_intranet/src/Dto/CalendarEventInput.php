@@ -51,8 +51,7 @@ class CalendarEventInput
             } else {
                 $start = new \DateTime($this->startAt);
                 if ($event->getDate()) {
-                    $timeStart = clone $event->getDate();
-                    $timeStart->setTime((int)$start->format('H'), (int)$start->format('i'), (int)$start->format('s'));
+                    $timeStart = new \DateTime($event->getDate()->format('Y-m-d') . ' ' . $start->format('H:i:s'));
                     $event->setStartAt($timeStart);
                 } else {
                     $event->setStartAt($start);
@@ -65,8 +64,7 @@ class CalendarEventInput
             } else {
                 $end = new \DateTime($this->endAt);
                 if ($event->getDate()) {
-                    $timeEnd = clone $event->getDate();
-                    $timeEnd->setTime((int)$end->format('H'), (int)$end->format('i'), (int)$end->format('s'));
+                    $timeEnd = new \DateTime($event->getDate()->format('Y-m-d') . ' ' . $end->format('H:i:s'));
                     $event->setEndAt($timeEnd);
                 } else {
                     $event->setEndAt($end);
