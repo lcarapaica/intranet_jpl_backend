@@ -18,8 +18,17 @@ class CalendarEventRepository extends ServiceEntityRepository
     {
         $qb = $this->createQueryBuilder('e');
 
-        // Always exclude logically deleted events
-        $qb->andWhere('e.deletedAt IS NULL');
+        // Filter logically deleted events
+        $includeDeleted = $criteria['include_deleted'] ?? false;
+        $onlyDeleted = $criteria['only_deleted'] ?? false;
+
+        if ($includeDeleted) {
+            if ($onlyDeleted) {
+                $qb->andWhere('e.deletedAt IS NOT NULL');
+            }
+        } else {
+            $qb->andWhere('e.deletedAt IS NULL');
+        }
 
         // Aggregate condition: (e.isCompanyWide = true) OR (e.owner = :user AND e.isCompanyWide = false)
         $qb->andWhere(
@@ -31,11 +40,11 @@ class CalendarEventRepository extends ServiceEntityRepository
 
         // Date Range Filters
         if (isset($criteria['start']) && $criteria['start'] !== '') {
-            $qb->andWhere('e.endAt >= :start')
+            $qb->andWhere('e.date >= :start')
                ->setParameter('start', new \DateTime($criteria['start']));
         }
         if (isset($criteria['end']) && $criteria['end'] !== '') {
-            $qb->andWhere('e.startAt <= :end')
+            $qb->andWhere('e.date <= :end')
                ->setParameter('end', new \DateTime($criteria['end']));
         }
 
@@ -54,8 +63,9 @@ class CalendarEventRepository extends ServiceEntityRepository
             }
         }
 
-        // Order chronologically by start date
-        $qb->orderBy('e.startAt', 'ASC');
+        // Order chronologically by date and start hour
+        $qb->orderBy('e.date', 'ASC')
+           ->addOrderBy('e.startAt', 'ASC');
 
         return $qb->getQuery()->getResult();
     }
@@ -81,10 +91,20 @@ class CalendarEventRepository extends ServiceEntityRepository
         // 3. The event has not finished yet (endAt >= NOW)
         $qb->andWhere('e.reminderAt IS NOT NULL')
            ->andWhere('e.reminderAt <= :now')
-           ->andWhere('e.endAt >= :now')
-           ->setParameter('now', $now);
+           ->andWhere(
+               $qb->expr()->orX(
+                   'e.endAt >= :now',
+                   $qb->expr()->andX(
+                       'e.endAt IS NULL',
+                       'e.date >= :today'
+                   )
+               )
+           )
+           ->setParameter('now', $now)
+           ->setParameter('today', $now->format('Y-m-d'));
 
-        $qb->orderBy('e.startAt', 'ASC')
+        $qb->orderBy('e.date', 'ASC')
+           ->addOrderBy('e.startAt', 'ASC')
            ->setMaxResults($limit);
 
         return $qb->getQuery()->getResult();

@@ -39,17 +39,13 @@ class UserController extends AbstractController
     // Returns a list of all the users that fit a criteria
     public function index(Request $request, UserRepository $repository): JsonResponse 
     {
-        // Role Check to list users, must be admin or above
-        if (!$this->isGranted('ROLE_ADMIN')) { 
-            return $this->json(['error' => 'No tienes permisos para listar a los usuarios.'], 403);
-        }
+        $hasAdminAccess = $this->isGranted('ROLE_ADMIN');
 
-        // Sanitize the URL via DTO
-        $filterInput = UserFilterInput::fromRequest($request, true);
+        // Sanitize the URL via DTO, passing dynamic admin privilege flag
+        $filterInput = UserFilterInput::fromRequest($request, $hasAdminAccess);
 
         // Fetch results from repository using the criteria array
         $result = $repository->searchAndPaginate($filterInput->toArray());
-
 
         return $this->json($result);
     }
@@ -93,14 +89,23 @@ class UserController extends AbstractController
             return $this->json(['error' => 'Usuario no encontrado'], 404);
         }
 
+        $hasAdminAccess = $this->isGranted('ROLE_ADMIN');
+
         // Maps the user entity data into a clean array 
         $roles = $user->getRoles();
+        $role = count($roles) > 0 ? $roles[0] : 'ROLE_USER';
+
+        // Hide superuser role from non-admins
+        if ($role === 'ROLE_SUPER_ADMIN' && !$hasAdminAccess) {
+            $role = 'ROLE_ADMIN';
+        }
+
         $userData = [
             'id' => $user->getId(),
             'email' => $user->getEmail(),
             'name' => $user->getName(),
             'surname' => $user->getSurname(),
-            'role' => count($roles) > 0 ? $roles[0] : 'ROLE_USER',
+            'role' => $role,
             'isActive' => $user->isActive(),
         ];
 

@@ -36,15 +36,28 @@ class CalendarEvent
     private $description;
 
     /**
-     * @ORM\Column(type="datetime")
-     * @Assert\NotBlank(message="La fecha de inicio es obligatoria")
+     * @ORM\Column(type="string", length=255, nullable=true)
+     * @Assert\Length(max=255, maxMessage="El lugar no puede superar los 255 caracteres")
+     * @Groups({"calendar:read"})
+     */
+    private $place;
+
+
+    /**
+     * @ORM\Column(type="date")
+     * @Assert\NotBlank(message="La fecha del evento es obligatoria")
+     * @Groups({"calendar:read"})
+     */
+    private $date;
+
+    /**
+     * @ORM\Column(type="datetime", nullable=true)
      * @Groups({"calendar:read"})
      */
     private $startAt;
 
     /**
-     * @ORM\Column(type="datetime")
-     * @Assert\NotBlank(message="La fecha de término es obligatoria")
+     * @ORM\Column(type="datetime", nullable=true)
      * @Groups({"calendar:read"})
      */
     private $endAt;
@@ -94,6 +107,7 @@ class CalendarEvent
 
     public function __construct()
     {
+        $this->date = new \DateTime();
         $this->createdAt = new \DateTime();
         $this->updatedAt = new \DateTime();
         $this->tags = [];
@@ -126,12 +140,35 @@ class CalendarEvent
         return $this;
     }
 
+    public function getPlace(): ?string
+    {
+        return $this->place;
+    }
+
+    public function setPlace(?string $place): self
+    {
+        $this->place = $place;
+        return $this;
+    }
+
+    public function getDate(): ?\DateTimeInterface
+    {
+        return $this->date;
+    }
+
+    public function setDate(\DateTimeInterface $date): self
+    {
+        $this->date = $date;
+        return $this;
+    }
+
+
     public function getStartAt(): ?\DateTimeInterface
     {
         return $this->startAt;
     }
 
-    public function setStartAt(\DateTimeInterface $startAt): self
+    public function setStartAt(?\DateTimeInterface $startAt): self
     {
         $this->startAt = $startAt;
         return $this;
@@ -142,7 +179,7 @@ class CalendarEvent
         return $this->endAt;
     }
 
-    public function setEndAt(\DateTimeInterface $endAt): self
+    public function setEndAt(?\DateTimeInterface $endAt): self
     {
         $this->endAt = $endAt;
         return $this;

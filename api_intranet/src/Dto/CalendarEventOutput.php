@@ -9,12 +9,14 @@ class CalendarEventOutput
     /**
      * Converts a CalendarEvent entity into a clean, sanitized associative array for API responses.
      */
-    public static function fromEntity(CalendarEvent $event): array
+    public static function fromEntity(CalendarEvent $event, bool $includeDeletedAt = false): array
     {
-        return [
+        $data = [
             'id'            => $event->getId(),
             'title'         => $event->getTitle(),
             'description'   => $event->getDescription(),
+            'place'         => $event->getPlace(),
+            'date'          => $event->getDate() ? $event->getDate()->format('Y-m-d') : null,
             'startAt'       => $event->getStartAt() ? $event->getStartAt()->format('Y-m-d H:i:s') : null,
             'endAt'         => $event->getEndAt() ? $event->getEndAt()->format('Y-m-d H:i:s') : null,
             'tags'          => $event->getTags(),
@@ -26,5 +28,11 @@ class CalendarEventOutput
                 'name' => $event->getOwner()->getDisplayName()
             ] : null
         ];
+
+        if ($includeDeletedAt) {
+            $data['deletedAt'] = $event->getDeletedAt() ? $event->getDeletedAt()->format('Y-m-d H:i:s') : null;
+        }
+
+        return $data;
     }
 }
