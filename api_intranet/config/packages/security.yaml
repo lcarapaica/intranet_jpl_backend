@@ -4,9 +4,10 @@ security:
             algorithm: auto
 
     role_hierarchy:
+        ROLE_CALENDAR_EDITOR: ROLE_USER
         ROLE_NEWS_EDITOR: ROLE_USER
         ROLE_LOGISTICS:   ROLE_USER
-        ROLE_ADMIN:       [ROLE_LOGISTICS, ROLE_NEWS_EDITOR]
+        ROLE_ADMIN:       [ROLE_LOGISTICS, ROLE_NEWS_EDITOR, ROLE_CALENDAR_EDITOR]
         ROLE_SUPER_ADMIN: ROLE_ADMIN
 
     providers:
