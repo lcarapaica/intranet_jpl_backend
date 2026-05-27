@@ -20,6 +20,9 @@ class SecurityHeadersListener
             return;
         }
 
+        $request = $event->getRequest();
+        $path = $request->getPathInfo();
+
         $response = $event->getResponse();
 
         // 1. Clickjacking protection
@@ -34,8 +37,13 @@ class SecurityHeadersListener
         // 4. Referrer leak protection
         $response->headers->set('Referrer-Policy', 'strict-origin-when-cross-origin');
 
-        // 5. Strict Content Security Policy (CSP) optimized for JSON APIs
-        $response->headers->set('Content-Security-Policy', "default-src 'self'; frame-ancestors 'none'; object-src 'none';");
+        // 5. Content Security Policy (CSP)
+        // Strict default for JSON APIs, relaxed specifically for Swagger UI (/api/doc) to allow interactive documentation
+        if ($path === '/api/doc') {
+            $response->headers->set('Content-Security-Policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' data:; style-src 'self' 'unsafe-inline';");
+        } else {
+            $response->headers->set('Content-Security-Policy', "default-src 'self'; frame-ancestors 'none'; object-src 'none';");
+        }
 
         // 6. Force HTTPS (Strict-Transport-Security)
         // Enforced in production only to prevent locking out local HTTP development
