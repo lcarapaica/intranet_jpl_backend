@@ -6,6 +6,7 @@ use App\Entity\User;
 use App\Entity\Conversation;
 use App\Entity\ConversationParticipant;
 use App\Entity\ChatMessage;
+use App\Service\AuditLogger;
 use App\Repository\UserRepository;
 use App\Repository\ConversationRepository;
 use App\Repository\ChatMessageRepository;
@@ -1130,7 +1131,7 @@ class ChatController extends AbstractController
      *     )
      * )
      */
-    public function startMeetCall(int $id, ConversationRepository $convRepo, \App\Service\GoogleMeetService $meetService, EntityManagerInterface $em, \Symfony\Component\Mercure\HubInterface $hub): JsonResponse
+    public function startMeetCall(int $id, ConversationRepository $convRepo, \App\Service\GoogleMeetService $meetService, EntityManagerInterface $em, \Symfony\Component\Mercure\HubInterface $hub, AuditLogger $auditLogger): JsonResponse
     {
         /** @var User $currentUser */
         $currentUser = $this->getUser();
@@ -1159,6 +1160,15 @@ class ChatController extends AbstractController
         // Create the Google Meet space
         $title = sprintf("Videollamada - %s", $conversation->getName() ?: "Chat " . $conversation->getId());
         $meetUrl = $meetService->createSpace($title, $attendeeEmails);
+
+        // Audit log the meeting arrangement
+        $auditLogger->log('MEET_ARRANGED', User::class, (string) $currentUser->getId(), [
+            'meetUrl' => $meetUrl,
+            'title' => $title,
+            'attendees' => $attendeeEmails,
+            'conversationId' => $conversation->getId(),
+            'type' => 'chat'
+        ]);
 
         // Record a system message in the chat database
         $msgContent = sprintf("Videollamada de Google Meet iniciada. Únete aquí: %s", $meetUrl);

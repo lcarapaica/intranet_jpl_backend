@@ -5,6 +5,7 @@ namespace App\Controller;
 use App\Entity\User;
 use App\Repository\UserRepository;
 use App\Service\GoogleMeetService;
+use App\Service\AuditLogger;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -54,7 +55,7 @@ class MeetController extends AbstractController
      *     )
      * )
      */
-    public function createInstant(Request $request, UserRepository $userRepository, GoogleMeetService $meetService): JsonResponse
+    public function createInstant(Request $request, UserRepository $userRepository, GoogleMeetService $meetService, AuditLogger $auditLogger): JsonResponse
     {
         /** @var User $currentUser */
         $currentUser = $this->getUser();
@@ -87,10 +88,72 @@ class MeetController extends AbstractController
         $title = sprintf("Reunión Instantánea - %s", $currentUser ? $currentUser->getDisplayName() : 'Intranet');
         $meetUrl = $meetService->createSpace($title, $attendeeEmails);
 
+        // Audit log the creation
+        $auditLogger->log('MEET_ARRANGED', User::class, (string) $currentUser->getId(), [
+            'meetUrl' => $meetUrl,
+            'title' => $title,
+            'attendees' => $attendeeEmails,
+            'type' => 'instant'
+        ]);
+
         return $this->json([
             'meetUrl' => $meetUrl,
             'title' => $title,
             'attendees' => $attendeeEmails
+        ]);
+    }
+
+    /**
+     * Logs when a user joins a Google Meet room.
+     * 
+     * @Route("/join", name="join", methods={"POST"})
+     * 
+     * @OA\Post(
+     *     path="/api/meet/join",
+     *     summary="Log when a user joins a Google Meet room",
+     *     tags={"Reuniones"},
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(
+     *                 property="meetUrl",
+     *                 type="string",
+     *                 example="https://meet.google.com/abc-defg-hij",
+     *                 description="The URL of the Google Meet room being joined"
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Join activity successfully logged"
+     *     ),
+     *     @OA\Response(
+     *         response=400,
+     *         description="Invalid parameters"
+     *     )
+     * )
+     */
+    public function joinMeet(Request $request, AuditLogger $auditLogger): JsonResponse
+    {
+        /** @var User $currentUser */
+        $currentUser = $this->getUser();
+        $userId = $currentUser instanceof User ? (string) $currentUser->getId() : null;
+
+        $data = json_decode($request->getContent(), true);
+        $meetUrl = $data['meetUrl'] ?? '';
+
+        if (empty($meetUrl)) {
+            return $this->json(['error' => 'El campo meetUrl es obligatorio.'], 400);
+        }
+
+        $auditLogger->log('MEET_JOINED', User::class, $userId, [
+            'meetUrl' => $meetUrl
+        ]);
+
+        return $this->json([
+            'status' => 'success',
+            'message' => 'Unión a reunión registrada en el log de auditoría.'
         ]);
     }
 }

@@ -28,9 +28,10 @@ class GoogleMeetService
      *
      * @param string $title The descriptive title for the meeting
      * @param array $attendeeEmails List of user emails to pre-authorize / invite
+     * @param string $accessType The access configuration for the space ('OPEN', 'TRUSTED', or 'RESTRICTED')
      * @return string The generated Google Meet URL
      */
-    public function createSpace(string $title, array $attendeeEmails = []): string
+    public function createSpace(string $title, array $attendeeEmails = [], string $accessType = 'TRUSTED'): string
     {
         // 1. Detect if the credentials file is missing or a placeholder
         if (!file_exists($this->credentialsPath)) {
@@ -90,7 +91,7 @@ class GoogleMeetService
             $response = $httpClient->post('https://meet.googleapis.com/v2/spaces', [
                 'json' => [
                     'config' => [
-                        'accessType' => 'OPEN' // OPEN, TRUSTED, or RESTRICTED
+                        'accessType' => $accessType
                     ]
                 ]
             ]);
