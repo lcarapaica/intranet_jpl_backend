@@ -99,6 +99,31 @@ class DatabaseActivitySubscriber implements EventSubscriber
             if (isset($changes['password'])) {
                 $changes['password'] = ['[REDACTED]', '[REDACTED]'];
             }
+
+            // Format changes to keep them clean, readable, and free of serialized entity/datetime objects
+            foreach ($changes as $fieldName => $values) {
+                if (is_array($values) && count($values) === 2) {
+                    [$oldVal, $newVal] = $values;
+                    
+                    // Format DateTime
+                    if ($oldVal instanceof \DateTimeInterface) {
+                        $oldVal = $oldVal->format('Y-m-d H:i:s');
+                    }
+                    if ($newVal instanceof \DateTimeInterface) {
+                        $newVal = $newVal->format('Y-m-d H:i:s');
+                    }
+                    
+                    // Format associated entities (objects with getId)
+                    if (is_object($oldVal) && method_exists($oldVal, 'getId')) {
+                        $oldVal = get_class($oldVal) . '#' . $oldVal->getId();
+                    }
+                    if (is_object($newVal) && method_exists($newVal, 'getId')) {
+                        $newVal = get_class($newVal) . '#' . $newVal->getId();
+                    }
+                    
+                    $changes[$fieldName] = [$oldVal, $newVal];
+                }
+            }
             
             $log->setAction($action);
             $log->setDetails($changes);
