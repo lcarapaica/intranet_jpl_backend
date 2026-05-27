@@ -12,6 +12,7 @@
         "doctrine/doctrine-migrations-bundle": "^3.2",
         "doctrine/orm": "^2.20",
         "gesdinet/jwt-refresh-token-bundle": "^0.12.0",
+        "google/apiclient": "2.15",
         "lexik/jwt-authentication-bundle": "^2.13",
         "nelmio/api-doc-bundle": "^4.11",
         "nelmio/cors-bundle": "^2.2",
@@ -42,7 +43,7 @@
         },
         "sort-packages": true,
         "audit": {
-            "ignore": ["PKSA-4k7v-pfvw-nqvp", "PKSA-s1hc-69wj-fhpp"]
+            "ignore": ["PKSA-4k7v-pfvw-nqvp", "PKSA-s1hc-69wj-fhpp", "PKSA-y2cr-5h3j-g3ys", "PKSA-2kqm-ps5x-s4f5"]
         }
     },
     "autoload": {

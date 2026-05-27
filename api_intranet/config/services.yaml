@@ -30,6 +30,11 @@ services:
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
 
+    App\Service\GoogleMeetService:
+        public: true
+        arguments:
+            $credentialsPath: '%env(resolve:GOOGLE_CREDENTIALS_PATH)%'
+            $systemOrganizer: '%env(resolve:GOOGLE_MEET_SYSTEM_ORGANIZER)%'
 
     App\EventListener\JwtAuthenticationListener:
         tags:
