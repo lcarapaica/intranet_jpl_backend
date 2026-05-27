@@ -32,6 +32,11 @@ class RateLimitListener
             return;
         }
 
+        // Bypass rate limiting for the bulk product creation endpoint
+        if ($path === '/api/products/bulk') {
+            return;
+        }
+
         $ip = $request->getClientIp();
 
         // 1. Strict limit on login endpoint

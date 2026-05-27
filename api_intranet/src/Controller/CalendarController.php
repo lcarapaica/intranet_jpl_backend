@@ -34,6 +34,7 @@ class CalendarController extends AbstractController
      *     @OA\Parameter(name="end", in="query", description="Filter end date (YYYY-MM-DD)", @OA\Schema(type="string")),
      *     @OA\Parameter(name="tag", in="query", description="Filter by event tag (e.g. 'tecnologia', 'JPL')", @OA\Schema(type="string")),
      *     @OA\Parameter(name="type", in="query", description="Filter by type (personal or company)", @OA\Schema(type="string")),
+     *     @OA\Parameter(name="showDeleted", in="query", description="Filter by deleted status ('active' for non-deleted, 'deleted' for soft-deleted only, 'all' for both) - Admins/Editors only", @OA\Schema(type="string", enum={"active", "deleted", "all"}, default="active")),
      *     @OA\Response(response=200, description="List of calendar events")
      * )
      */
@@ -47,16 +48,21 @@ class CalendarController extends AbstractController
         $tag = $request->query->get('tag', '');
         $type = $request->query->get('type', '');
 
+        $showDeleted = $request->query->get('showDeleted', 'active');
+        $isAdminOrEditor = $this->isGranted('ROLE_CALENDAR_EDITOR');
+
         $events = $repository->findUserEventsFeed($user, [
             'start' => $start,
             'end'   => $end,
             'tag'   => $tag,
-            'type'  => $type
+            'type'  => $type,
+            'include_deleted' => $isAdminOrEditor && in_array($showDeleted, ['true', '1', 'all', 'only', 'deleted'], true),
+            'only_deleted' => $isAdminOrEditor && in_array($showDeleted, ['only', 'deleted'], true)
         ]);
 
         $data = [];
         foreach ($events as $event) {
-            $data[] = CalendarEventOutput::fromEntity($event);
+            $data[] = CalendarEventOutput::fromEntity($event, $isAdminOrEditor);
         }
 
         return $this->json($data);
@@ -108,7 +114,9 @@ class CalendarController extends AbstractController
         $user = $this->getUser();
         $event = $repository->find($id);
 
-        if (!$event || $event->getDeletedAt() !== null) {
+        $isAdminOrEditor = $this->isGranted('ROLE_CALENDAR_EDITOR');
+
+        if (!$event || ($event->getDeletedAt() !== null && !$isAdminOrEditor)) {
             return $this->json(['error' => 'Evento no encontrado'], 404);
         }
 
@@ -117,7 +125,7 @@ class CalendarController extends AbstractController
             return $this->json(['error' => 'Acceso denegado a este evento'], 403);
         }
 
-        return $this->json(CalendarEventOutput::fromEntity($event));
+        return $this->json(CalendarEventOutput::fromEntity($event, $isAdminOrEditor));
     }
 
     /**
@@ -134,8 +142,10 @@ class CalendarController extends AbstractController
      *             type="object",
      *             @OA\Property(property="title", type="string", example="Reunión de Tecnología"),
      *             @OA\Property(property="description", type="string", example="Planificación semanal"),
-     *             @OA\Property(property="startAt", type="string", format="date-time", example="2026-06-01 10:00:00"),
-     *             @OA\Property(property="endAt", type="string", format="date-time", example="2026-06-01 11:30:00"),
+     *             @OA\Property(property="place", type="string", example="Sala de reuniones A", nullable=true),
+     *             @OA\Property(property="date", type="string", format="date", example="2026-06-01"),
+     *             @OA\Property(property="startAt", type="string", format="date-time", example="2026-06-01 10:00:00", nullable=true),
+     *             @OA\Property(property="endAt", type="string", format="date-time", example="2026-06-01 11:30:00", nullable=true),
      *             @OA\Property(property="tags", type="array", @OA\Items(type="string"), example={"tecnologia", "reunion"}),
      *             @OA\Property(property="isCompanyWide", type="boolean", example=false),
      *             @OA\Property(property="reminderAt", type="string", format="date-time", example="2026-06-01 09:30:00", nullable=true)
@@ -160,14 +170,12 @@ class CalendarController extends AbstractController
         }
 
         $event = new CalendarEvent();
-        
-        // If it's a personal event, set the owner
-        if (!$isCompanyWideInput) {
-            $event->setOwner($user);
-        }
+
+        // Always set the owner/creator of the event
+        $event->setOwner($user);
 
         $dto = CalendarEventInput::fromArray($data);
-        
+
         try {
             $dto->updateEntity($event, array_keys($data));
         } catch (\Exception $e) {
@@ -184,9 +192,13 @@ class CalendarController extends AbstractController
             return $this->json(['error' => implode(' ', $errorMessages)], 400);
         }
 
-        // Date validation: startAt must be before endAt
-        if ($event->getStartAt() >= $event->getEndAt()) {
-            return $this->json(['error' => 'La fecha de inicio debe ser anterior a la de término.'], 400);
+        // Date validation: startAt and endAt must both be set, or both null (date is optional)
+        if (($event->getStartAt() === null && $event->getEndAt() !== null) || ($event->getStartAt() !== null && $event->getEndAt() === null)) {
+            return $this->json(['error' => 'Si defines una hora de inicio, también debes definir una hora de término (y viceversa).'], 400);
+        }
+
+        if ($event->getStartAt() !== null && $event->getEndAt() !== null && $event->getStartAt() > $event->getEndAt()) {
+            return $this->json(['error' => 'El evento no puede terminar antes de empezar.'], 400);
         }
 
         $em->persist($event);
@@ -213,8 +225,10 @@ class CalendarController extends AbstractController
      *             type="object",
      *             @OA\Property(property="title", type="string", example="Reunión Actualizada"),
      *             @OA\Property(property="description", type="string", example="Nueva descripción"),
-     *             @OA\Property(property="startAt", type="string", format="date-time"),
-     *             @OA\Property(property="endAt", type="string", format="date-time"),
+     *             @OA\Property(property="place", type="string", example="Sala de reuniones A", nullable=true),
+     *             @OA\Property(property="date", type="string", format="date", example="2026-06-01"),
+     *             @OA\Property(property="startAt", type="string", format="date-time", nullable=true),
+     *             @OA\Property(property="endAt", type="string", format="date-time", nullable=true),
      *             @OA\Property(property="tags", type="array", @OA\Items(type="string")),
      *             @OA\Property(property="reminderAt", type="string", format="date-time", nullable=true)
      *         )
@@ -246,12 +260,12 @@ class CalendarController extends AbstractController
         }
 
         $data = json_decode($request->getContent(), true) ?: [];
-        
+
         // Prevent changing isCompanyWide status via update for consistency
         unset($data['isCompanyWide']);
 
         $dto = CalendarEventInput::fromArray($data);
-        
+
         try {
             $dto->updateEntity($event, array_keys($data));
         } catch (\Exception $e) {
@@ -267,8 +281,13 @@ class CalendarController extends AbstractController
             return $this->json(['error' => implode(' ', $errorMessages)], 400);
         }
 
-        if ($event->getStartAt() >= $event->getEndAt()) {
-            return $this->json(['error' => 'La fecha de inicio debe ser anterior a la de término.'], 400);
+        // Date validation: startAt and endAt must both be set, or both null
+        if (($event->getStartAt() === null && $event->getEndAt() !== null) || ($event->getStartAt() !== null && $event->getEndAt() === null)) {
+            return $this->json(['error' => 'Si defines una hora de inicio, también debes definir una hora de término (y viceversa).'], 400);
+        }
+
+        if ($event->getStartAt() !== null && $event->getEndAt() !== null && $event->getStartAt() > $event->getEndAt()) {
+            return $this->json(['error' => 'El evento no puede terminar antes de empezar.'], 400);
         }
 
         $em->flush();
@@ -302,8 +321,10 @@ class CalendarController extends AbstractController
 
         // Authorization checks
         if ($event->getIsCompanyWide()) {
-            if (!$this->isGranted('ROLE_CALENDAR_EDITOR')) {
-                return $this->json(['error' => 'No tienes permisos para eliminar eventos globales.'], 403);
+            $isCreator = ($event->getOwner() === $user);
+            $isEditor = $this->isGranted('ROLE_CALENDAR_EDITOR');
+            if (!$isCreator && !$isEditor) {
+                return $this->json(['error' => 'No tienes permisos para eliminar eventos globales que no creaste.'], 403);
             }
         } else {
             if ($event->getOwner() !== $user) {
@@ -335,7 +356,7 @@ class CalendarController extends AbstractController
     {
         /** @var User $user */
         $user = $this->getUser();
-        
+
         // Find regardless of soft-delete state
         $event = $repository->find($id);
 
@@ -345,8 +366,10 @@ class CalendarController extends AbstractController
 
         // Authorization checks
         if ($event->getIsCompanyWide()) {
-            if (!$this->isGranted('ROLE_CALENDAR_EDITOR')) {
-                return $this->json(['error' => 'No tienes permisos para modificar eventos globales.'], 403);
+            $isCreator = ($event->getOwner() === $user);
+            $isEditor = $this->isGranted('ROLE_CALENDAR_EDITOR');
+            if (!$isCreator && !$isEditor) {
+                return $this->json(['error' => 'No tienes permisos para modificar eventos globales que no creaste.'], 403);
             }
         } else {
             if ($event->getOwner() !== $user) {

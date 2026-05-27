@@ -112,24 +112,31 @@ class UserRepository extends ServiceEntityRepository implements PasswordUpgrader
 
         // Map database objects into a clean associative array
         $data = [];
-        foreach ($paginator as $user) {
-            $roles = $user->getRoles();
-            $userArray = [
-                'id'       => $user->getId(),
-                'email'    => $user->getEmail(),
-                'name'     => $user->getName(),
-                'surname'  => $user->getSurname(),
-                'role'     => count($roles) > 0 ? $roles[0] : 'ROLE_USER',
-                'isActive' => $user->isActive(),
-            ];
+         foreach ($paginator as $user) {
+             $roles = $user->getRoles();
+             $role = count($roles) > 0 ? $roles[0] : 'ROLE_USER';
 
-            // Only add deletedAt field if current visitor has admin privileges
-            if ($hasAdminAccess) {
-                $userArray['deletedAt'] = $user->getDeletedAt() ? $user->getDeletedAt()->format('Y-m-d H:i:s') : null;
-            }
+             // Hide superuser role from non-admins
+             if ($role === 'ROLE_SUPER_ADMIN' && !$hasAdminAccess) {
+                 $role = 'ROLE_ADMIN';
+             }
 
-            $data[] = $userArray;
-        }
+             $userArray = [
+                 'id'       => $user->getId(),
+                 'email'    => $user->getEmail(),
+                 'name'     => $user->getName(),
+                 'surname'  => $user->getSurname(),
+                 'role'     => $role,
+                 'isActive' => $user->isActive(),
+             ];
+
+             // Only add deletedAt field if current visitor has admin privileges
+             if ($hasAdminAccess) {
+                 $userArray['deletedAt'] = $user->getDeletedAt() ? $user->getDeletedAt()->format('Y-m-d H:i:s') : null;
+             }
+
+             $data[] = $userArray;
+         }
 
         // Return structured dataset paired with standard pagination metrics
         return [
