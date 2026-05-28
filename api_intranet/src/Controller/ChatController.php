@@ -103,6 +103,7 @@ class ChatController extends AbstractController
             // Initialize a new private conversation and create the participation records for both users.
             $conversation = new Conversation();
             $conversation->setType('private');
+            $conversation->setName(null);
 
             $p1 = new ConversationParticipant();
             $p1->setUser($currentUser);
@@ -120,9 +121,12 @@ class ChatController extends AbstractController
             $em->persist($p2);
         } else {
             // Group chat
+            if (empty($name) || trim($name) === '') {
+                return $this->json(['error' => 'El nombre es obligatorio para un chat grupal'], 400);
+            }
             $conversation = new Conversation();
             $conversation->setType('group');
-            $conversation->setName($name ?: 'Group Chat');
+            $conversation->setName(trim($name));
 
             $pSelf = new ConversationParticipant();
             $pSelf->setUser($currentUser);
