@@ -295,9 +295,9 @@ class NewsController extends AbstractController
     /**
      * Toggles the active status (soft-delete or restore) of a news article.
      * 
-     * @Route("/{id}/toggle", name="toggle", methods={"PATCH"}, requirements={"id"="\d+"})
+     * @Route("/{id}/toggle-active", name="toggle_active", methods={"PATCH"}, requirements={"id"="\d+"})
      * @OA\Patch(
-     *     path="/api/news/{id}/toggle",
+     *     path="/api/news/{id}/toggle-active",
      *     summary="Toggle active status of a news article (Author or Admins only)",
      *     tags={"Noticias"},
      *     @OA\Parameter(name="id", in="path", required=true, @OA\Schema(type="integer")),
@@ -306,7 +306,7 @@ class NewsController extends AbstractController
      *     @OA\Response(response=404, description="News article not found")
      * )
      */
-    public function toggle(int $id, NewsRepository $repository, EntityManagerInterface $em): JsonResponse
+    public function toggleActive(int $id, NewsRepository $repository, EntityManagerInterface $em): JsonResponse
     {
         // Enforce generic role access for news editors
         if (!$this->isGranted('ROLE_NEWS_EDITOR')) {
