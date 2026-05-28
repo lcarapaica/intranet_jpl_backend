@@ -84,7 +84,6 @@ class LogoutAuditListener
 
         $this->auditLogger->log('LOGOUT', User::class, $userId, [
             'email'          => $username,
-            'token_revoked'  => $tokenString,
         ]);
     }
 }
