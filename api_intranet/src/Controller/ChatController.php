@@ -66,6 +66,10 @@ class ChatController extends AbstractController
         $currentUser = $this->getUser(); // Obtains the current user
         $data = json_decode($request->getContent(), true); // Retrieves the name, type and participants of the conversation.
 
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return $this->json(['error' => 'Formato JSON inválido'], 400);
+        }
+
         // Extract and filter the list of participant IDs from the request data.
         $participantIds = $data['participantIds'] ?? [];
         $type = $data['type'] ?? (count($participantIds) > 1 ? 'group' : 'private'); // Defaults to a private chat if 2 participants, group for more.
@@ -712,7 +716,7 @@ class ChatController extends AbstractController
      *     )
      * )
      */
-    public function addParticipant(int $id, Request $request, ConversationRepository $convRepo, UserRepository $userRepository, EntityManagerInterface $em): JsonResponse
+    public function addParticipant(int $id, Request $request, ConversationRepository $convRepo, UserRepository $userRepository, EntityManagerInterface $em, AuditLogger $auditLogger): JsonResponse
     {
         /** @var User $currentUser */
         $currentUser = $this->getUser();
@@ -801,6 +805,19 @@ class ChatController extends AbstractController
         // Apply and save all participant changes to the database.
         $em->flush();
 
+        // Audit log the addition of participants
+        if (!empty($addedUsers)) {
+            $addedUserEmails = array_map(function ($item) use ($userRepository) {
+                $u = $userRepository->find($item['userId']);
+                return $u ? $u->getEmail() : 'unknown';
+            }, $addedUsers);
+
+            $auditLogger->log('ADD_PARTICIPANT', Conversation::class, (string) $conversation->getId(), [
+                'conversation_name' => $conversation->getName(),
+                'added_participants' => $addedUserEmails
+            ]);
+        }
+
         return $this->json([
             'status' => 'success',
             'added' => $addedUsers,
@@ -849,7 +866,7 @@ class ChatController extends AbstractController
      *     )
      * )
      */
-    public function kickParticipant(int $id, int $userId, ConversationRepository $convRepo, EntityManagerInterface $em): JsonResponse
+    public function kickParticipant(int $id, int $userId, ConversationRepository $convRepo, EntityManagerInterface $em, AuditLogger $auditLogger): JsonResponse
     {
         /** @var User $currentUser */
         $currentUser = $this->getUser();
@@ -899,9 +916,18 @@ class ChatController extends AbstractController
             return $this->json(['error' => 'Participante no encontrado en esta conversación'], 404);
         }
 
+        $targetUser = $targetParticipant->getUser();
+        $targetUserEmail = $targetUser ? $targetUser->getEmail() : 'unknown';
+
         // Remove the participant relationship from the database.
         $em->remove($targetParticipant);
         $em->flush();
+
+        // Audit log the kick action
+        $auditLogger->log('KICK_PARTICIPANT', Conversation::class, (string) $conversation->getId(), [
+            'conversation_name' => $conversation->getName(),
+            'kicked_user' => $targetUserEmail
+        ]);
 
         return $this->json(['status' => 'success', 'message' => 'Usuario expulsado del grupo exitosamente']);
     }
@@ -940,7 +966,7 @@ class ChatController extends AbstractController
      *     )
      * )
      */
-    public function leaveConversation(int $id, ConversationRepository $convRepo, EntityManagerInterface $em): JsonResponse
+    public function leaveConversation(int $id, ConversationRepository $convRepo, EntityManagerInterface $em, AuditLogger $auditLogger): JsonResponse
     {
         /** @var User $currentUser */
         $currentUser = $this->getUser();
@@ -973,6 +999,12 @@ class ChatController extends AbstractController
         // Delete the current user's membership and save changes.
         $em->remove($targetParticipant);
         $em->flush();
+
+        // Audit log the leave action
+        $auditLogger->log('LEAVE_CONVERSATION', Conversation::class, (string) $conversation->getId(), [
+            'conversation_name' => $conversation->getName(),
+            'email' => $currentUser->getEmail()
+        ]);
 
         return $this->json(['status' => 'success', 'message' => 'Has abandonado la conversación exitosamente']);
     }
@@ -1025,7 +1057,7 @@ class ChatController extends AbstractController
      *     )
      * )
      */
-    public function updateParticipantRole(int $id, int $userId, Request $request, ConversationRepository $convRepo, EntityManagerInterface $em): JsonResponse
+    public function updateParticipantRole(int $id, int $userId, Request $request, ConversationRepository $convRepo, EntityManagerInterface $em, AuditLogger $auditLogger): JsonResponse
     {
         /** @var User $currentUser */
         $currentUser = $this->getUser();
@@ -1094,6 +1126,16 @@ class ChatController extends AbstractController
         // Apply the updated role and flush the changes.
         $targetParticipant->setRole($newRole);
         $em->flush();
+
+        // Audit log the role update
+        $targetUser = $targetParticipant->getUser();
+        $targetUserEmail = $targetUser ? $targetUser->getEmail() : 'unknown';
+
+        $auditLogger->log('UPDATE_PARTICIPANT_ROLE', Conversation::class, (string) $conversation->getId(), [
+            'conversation_name' => $conversation->getName(),
+            'target_user' => $targetUserEmail,
+            'new_role' => $newRole
+        ]);
 
         return $this->json([
             'status' => 'success',
