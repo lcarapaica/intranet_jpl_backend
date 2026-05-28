@@ -28,7 +28,7 @@ class ProductController extends AbstractController
      * @OA\Parameter(name="limit", in="query", description="Page limit (10, 25, 50, 100)", @OA\Schema(type="integer", default=25)),
      * @OA\Parameter(name="page", in="query", description="Page Number", @OA\Schema(type="integer", default=1)),
      * @OA\Parameter(name="empresa", in="query", description="Filter by exact Empresa name", @OA\Schema(type="string")),
-     * @OA\Parameter(name="active", in="query", description="Filter by active status (true/false). Only admins/logistics can see false.", @OA\Schema(type="string")),
+     * @OA\Parameter(name="isActive", in="query", description="Filter by active status (true to list active products, false to list soft-deleted ones). Only admins/logistics can see false.", @OA\Schema(type="boolean", default=true)),
      * @OA\Parameter(name="sort", in="query", description="Sort by field (nombre, categoria, marca, modelo, empresa, cantidad, etc.)", @OA\Schema(type="string", default="id")),
      * @OA\Parameter(name="order", in="query", description="Sort order (ASC, DESC)", @OA\Schema(type="string", default="DESC")),
      * @OA\Response(response=200, description="List of products")

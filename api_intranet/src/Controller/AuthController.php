@@ -41,11 +41,12 @@ class AuthController extends AbstractController
     {
         $data = json_decode($request->getContent(), true);
 
+        // Validate the JSON 
         if (!$data || !is_array($data)) {
             return new JsonResponse(['error' => 'Datos inválidos o JSON malformado'], 400);
         }
 
-        // Only admins and above can register users
+        // Only users with ROLE_ADMIN can register new users
         if (!$this->isGranted('ROLE_ADMIN')) {
             return new JsonResponse(['error' => 'No tienes permisos para registrar usuarios.'], 403);
         }
@@ -119,10 +120,11 @@ class AuthController extends AbstractController
     {
         $user = $this->getUser();
 
+        // Must be logged in to use it
         if (!$user) {
             return new JsonResponse(['error' => 'No autenticado'], 401);
         }
-
+        // Returns formatted response
         return new JsonResponse([
             'email' => $user->getEmail(),
             'name' => $user->getName(),
@@ -157,19 +159,23 @@ class AuthController extends AbstractController
      */
     public function logout(Request $request, RefreshTokenManagerInterface $refreshTokenManager): JsonResponse
     {
+        // Decode the request body to extract the refresh token
         $data = json_decode($request->getContent(), true);
         $refreshTokenString = $data['refresh_token'] ?? null;
 
+        // Checks if the refresh token was received
         if (!$refreshTokenString) {
             return new JsonResponse(['error' => 'No se proporcionó el refresh token'], 400);
         }
 
         $refreshToken = $refreshTokenManager->get($refreshTokenString);
 
+        // If token is invalid return 400
         if (!$refreshToken) {
             return new JsonResponse(['error' => 'Refresh token inválido'], 400);
         }
 
+        // Deletes the token from the database to revoke it and log the user out
         $refreshTokenManager->delete($refreshToken);
 
         return new JsonResponse(['message' => 'Sesión cerrada y token revocado']);
@@ -198,18 +204,22 @@ class AuthController extends AbstractController
      */
     public function checkPassword(Request $request, UserPasswordEncoderInterface $passwordEncoder): JsonResponse
     {
+        // Obtains the user
         $user = $this->getUser();
         if (!$user instanceof User) {
             return new JsonResponse(['error' => 'Usuario no autenticado'], 401);
         }
 
+        // Decodes the request body to get current_password value
         $data = json_decode($request->getContent(), true);
         $currentPassword = $data['current_password'] ?? null;
 
+        // If token is doesn´t exist return 400
         if (empty($currentPassword)) {
             return new JsonResponse(['error' => 'Debe proporcionar la contraseña actual'], 400);
         }
 
+        // Compares password with DB
         $isValid = $passwordEncoder->isPasswordValid($user, $currentPassword);
 
         if (!$isValid) {

@@ -53,16 +53,18 @@ class GoogleMeetService
             $credentials = json_decode($credentialsContent, true);
 
             if (isset($credentials['type']) && $credentials['type'] === 'service_account') {
-                // Flow A: Service Account (standard or with Domain delegation)
+                // Option 1: Service Account (standard or with Domain delegation)
                 $client->setAuthConfig($this->credentialsPath);
                 if (!empty($this->systemOrganizer) && $this->systemOrganizer !== 'meet-organizer@yourcompany.com') {
                     $client->setSubject($this->systemOrganizer);
                 }
             } else {
-                // Flow B: OAuth 2.0 Client Credentials (for personal development / non-Workspace)
+                // Option 2: OAuth 2.0 Client Credentials (for personal development / non-Workspace)
                 $client->setAuthConfig($this->credentialsPath);
                 $client->setAccessType('offline');
                 $client->setPrompt('select_account consent');
+
+                $client->setRedirectUri('https://intranet.pafar.com.ve/ambiente_prueba_intranet/public/api/auth/google/callback');
 
                 // Token file is saved in the same secrets directory next to the credentials
                 $tokenPath = dirname($this->credentialsPath) . '/token.json';
@@ -109,7 +111,6 @@ class GoogleMeetService
 
             // Fallback just in case Uri is blank
             return $this->generateMockMeetUrl();
-
         } catch (\Exception $e) {
             $this->logger->error("Failed to create Google Meet space via API: " . $e->getMessage() . ". Falling back to mock URL.");
             if (php_sapi_name() === 'cli') {

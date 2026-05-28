@@ -9,6 +9,10 @@ use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
 
 /**
  * @ORM\Entity(repositoryClass=ProductRepository::class)
+ * @ORM\Table(name="product", indexes={
+ *     @ORM\Index(name="idx_product_deleted_at", columns={"deleted_at"}),
+ *     @ORM\Index(name="idx_product_empresa", columns={"empresa"})
+ * })
  */
 class Product
 {

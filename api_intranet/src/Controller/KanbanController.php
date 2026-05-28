@@ -28,11 +28,11 @@ class KanbanController extends AbstractController
      *     summary="Retrieves tasks for the current user's personal board, filtered by active status",
      *     tags={"Kanban Board"},
      *     @OA\Parameter(
-     *         name="active",
+     *         name="isActive",
      *         in="query",
      *         description="Filter tasks by active status (true to list active tasks, false to list soft-deleted ones)",
      *         required=false,
-     *         @OA\Schema(type="string", default="true")
+     *         @OA\Schema(type="boolean", default=true)
      *     ),
      *     @OA\Response(
      *         response=200,
@@ -59,9 +59,9 @@ class KanbanController extends AbstractController
         /** @var User $user */
         $user = $this->getUser();
 
-        // Check if the 'active' parameter is present and determine its boolean value. Defaults to true if not specified.
-        $activeParam = $request->query->get('active', 'true');
-        $isActive = filter_var($activeParam, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? true;
+        // Check if the 'isActive' parameter is present and determine its boolean value. Defaults to true if not specified.
+        $isActiveParam = $request->query->get('isActive', 'true');
+        $isActive = filter_var($isActiveParam, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? true;
 
         $qb = $repository->createQueryBuilder('t')
             ->where('t.owner = :owner')

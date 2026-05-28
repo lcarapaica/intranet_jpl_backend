@@ -9,6 +9,10 @@ use Symfony\Component\Validator\Constraints as Assert;
 
 /**
  * @ORM\Entity(repositoryClass=CalendarEventRepository::class)
+ * @ORM\Table(name="calendar_event", indexes={
+ *     @ORM\Index(name="idx_calendar_event_deleted_at", columns={"deleted_at"}),
+ *     @ORM\Index(name="idx_calendar_event_date", columns={"date"})
+ * })
  * @ORM\HasLifecycleCallbacks
  */
 class CalendarEvent
