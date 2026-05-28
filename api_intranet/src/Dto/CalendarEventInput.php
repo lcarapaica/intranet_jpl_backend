@@ -42,8 +42,12 @@ class CalendarEventInput
         if (in_array('place', $providedFields)) {
             $event->setPlace($this->place);
         }
-        if (in_array('date', $providedFields) && $this->date !== null) {
-            $event->setDate(new \DateTime($this->date));
+        if (in_array('date', $providedFields)) {
+            if ($this->date === null || trim($this->date) === '') {
+                $event->setDate(null);
+            } else {
+                $event->setDate(new \DateTime($this->date));
+            }
         }
         if (in_array('startAt', $providedFields)) {
             if ($this->startAt === null) {
