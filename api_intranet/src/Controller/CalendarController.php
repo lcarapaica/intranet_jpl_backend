@@ -34,7 +34,7 @@ class CalendarController extends AbstractController
      *     @OA\Parameter(name="end", in="query", description="Filter end date (YYYY-MM-DD)", @OA\Schema(type="string")),
      *     @OA\Parameter(name="tag", in="query", description="Filter by event tag (e.g. 'tecnologia', 'JPL')", @OA\Schema(type="string")),
      *     @OA\Parameter(name="type", in="query", description="Filter by type (personal or company)", @OA\Schema(type="string")),
-     *     @OA\Parameter(name="showDeleted", in="query", description="Filter by deleted status ('active' for non-deleted, 'deleted' for soft-deleted only, 'all' for both) - Admins/Editors only", @OA\Schema(type="string", enum={"active", "deleted", "all"}, default="active")),
+     *     @OA\Parameter(name="isActive", in="query", description="Filter by active status (true to list active events, false to list soft-deleted ones) - Admins/Editors only", @OA\Schema(type="boolean", default=true)),
      *     @OA\Response(response=200, description="List of calendar events")
      * )
      */
@@ -48,7 +48,11 @@ class CalendarController extends AbstractController
         $tag = $request->query->get('tag', '');
         $type = $request->query->get('type', '');
 
-        $showDeleted = $request->query->get('showDeleted', 'active');
+        $isActiveParam = $request->query->get('isActive', 'true');
+        // Parse the boolean filter, falling back to active events if the param is invalid or omitted
+        $isActive = filter_var($isActiveParam, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? true;
+
+        // Admins and editors are allowed to include soft-deleted calendar events in the feed
         $isAdminOrEditor = $this->isGranted('ROLE_CALENDAR_EDITOR');
 
         $events = $repository->findUserEventsFeed($user, [
@@ -56,8 +60,8 @@ class CalendarController extends AbstractController
             'end'   => $end,
             'tag'   => $tag,
             'type'  => $type,
-            'include_deleted' => $isAdminOrEditor && in_array($showDeleted, ['true', '1', 'all', 'only', 'deleted'], true),
-            'only_deleted' => $isAdminOrEditor && in_array($showDeleted, ['only', 'deleted'], true)
+            'include_deleted' => $isAdminOrEditor && !$isActive,
+            'only_deleted' => $isAdminOrEditor && !$isActive
         ]);
 
         $data = [];
@@ -116,11 +120,12 @@ class CalendarController extends AbstractController
 
         $isAdminOrEditor = $this->isGranted('ROLE_CALENDAR_EDITOR');
 
+        // Only calendar editors and admins are allowed to retrieve soft-deleted events
         if (!$event || ($event->getDeletedAt() !== null && !$isAdminOrEditor)) {
             return $this->json(['error' => 'Evento no encontrado'], 404);
         }
 
-        // Access check: must be company-wide OR owned by the requester
+        // Users can only see company-wide events or events they created themselves
         if (!$event->getIsCompanyWide() && $event->getOwner() !== $user) {
             return $this->json(['error' => 'Acceso denegado a este evento'], 403);
         }
@@ -192,11 +197,12 @@ class CalendarController extends AbstractController
             return $this->json(['error' => implode(' ', $errorMessages)], 400);
         }
 
-        // Date validation: startAt and endAt must both be set, or both null (date is optional)
+        // Validate that both times are present together if one of them is defined
         if (($event->getStartAt() === null && $event->getEndAt() !== null) || ($event->getStartAt() !== null && $event->getEndAt() === null)) {
             return $this->json(['error' => 'Si defines una hora de inicio, también debes definir una hora de término (y viceversa).'], 400);
         }
 
+        // Ensure chronological validity of dates
         if ($event->getStartAt() !== null && $event->getEndAt() !== null && $event->getStartAt() > $event->getEndAt()) {
             return $this->json(['error' => 'El evento no puede terminar antes de empezar.'], 400);
         }
@@ -248,7 +254,7 @@ class CalendarController extends AbstractController
             return $this->json(['error' => 'Evento no encontrado'], 404);
         }
 
-        // Authorization checks
+        // Validate edit permissions based on scope: global events require editor role, personal ones require ownership
         if ($event->getIsCompanyWide()) {
             if (!$this->isGranted('ROLE_CALENDAR_EDITOR')) {
                 return $this->json(['error' => 'No tienes permisos para modificar eventos globales.'], 403);
@@ -261,7 +267,7 @@ class CalendarController extends AbstractController
 
         $data = json_decode($request->getContent(), true) ?: [];
 
-        // Prevent changing isCompanyWide status via update for consistency
+        // Prevent changing isCompanyWide scope after creation to maintain structural integrity
         unset($data['isCompanyWide']);
 
         $dto = CalendarEventInput::fromArray($data);
@@ -281,11 +287,12 @@ class CalendarController extends AbstractController
             return $this->json(['error' => implode(' ', $errorMessages)], 400);
         }
 
-        // Date validation: startAt and endAt must both be set, or both null
+        // Validate that both times are present together if one of them is defined
         if (($event->getStartAt() === null && $event->getEndAt() !== null) || ($event->getStartAt() !== null && $event->getEndAt() === null)) {
             return $this->json(['error' => 'Si defines una hora de inicio, también debes definir una hora de término (y viceversa).'], 400);
         }
 
+        // Ensure chronological validity of dates
         if ($event->getStartAt() !== null && $event->getEndAt() !== null && $event->getStartAt() > $event->getEndAt()) {
             return $this->json(['error' => 'El evento no puede terminar antes de empezar.'], 400);
         }
@@ -319,7 +326,7 @@ class CalendarController extends AbstractController
             return $this->json(['error' => 'Evento no encontrado'], 404);
         }
 
-        // Authorization checks
+        // Global events can be deleted by their creator or an editor, whereas personal events can only be deleted by their owner
         if ($event->getIsCompanyWide()) {
             $isCreator = ($event->getOwner() === $user);
             $isEditor = $this->isGranted('ROLE_CALENDAR_EDITOR');
@@ -332,6 +339,7 @@ class CalendarController extends AbstractController
             }
         }
 
+        // Soft-delete the event by record timestamping
         $event->setDeletedAt(new \DateTime());
         $em->flush();
 
@@ -364,7 +372,7 @@ class CalendarController extends AbstractController
             return $this->json(['error' => 'Evento no encontrado'], 404);
         }
 
-        // Authorization checks
+        // Global events can be updated by their creator or an editor, whereas personal events require ownership
         if ($event->getIsCompanyWide()) {
             $isCreator = ($event->getOwner() === $user);
             $isEditor = $this->isGranted('ROLE_CALENDAR_EDITOR');
@@ -377,6 +385,7 @@ class CalendarController extends AbstractController
             }
         }
 
+        // Toggle logical state by altering the deletion timestamp
         if ($event->getDeletedAt() === null) {
             $event->setDeletedAt(new \DateTime());
             $message = 'Evento desactivado (eliminado lógicamente) correctamente';

@@ -37,7 +37,7 @@ class UserFilterInput
      */
     public string $order = 'DESC';
 
-    public bool $active = true;
+    public bool $isActive = true;
 
     public bool $hasAdminAccess = true;
 
@@ -60,7 +60,7 @@ class UserFilterInput
         $order = strtoupper($request->query->get('order', 'DESC'));
         $input->order = in_array($order, ['ASC', 'DESC']) ? $order : 'DESC';
 
-        $input->active = $request->query->getBoolean('active', true);
+        $input->isActive = $request->query->getBoolean('isActive', true);
         $input->hasAdminAccess = $hasAdminAccess;
         
         return $input; //returns object instance
@@ -76,7 +76,7 @@ class UserFilterInput
             'limit'          => $this->limit,
             'sort'           => $this->sort,
             'order'          => $this->order,
-            'active'         => $this->active,
+            'isActive'       => $this->isActive,
             'hasAdminAccess' => $this->hasAdminAccess,
         ];
     }

@@ -48,7 +48,7 @@ class UserRepository extends ServiceEntityRepository implements PasswordUpgrader
             'limit'          => 25,
             'hasAdminAccess' => false,
             'role'           => null,
-            'active'         => true,
+            'isActive'       => true,
             'sort'           => 'id',
             'order'          => 'DESC',
         ], $criteria);
@@ -61,9 +61,9 @@ class UserRepository extends ServiceEntityRepository implements PasswordUpgrader
         $qb = $this->createQueryBuilder('u');
 
         // Activity filter: non-admins are forced to only see active records
-        if (!$hasAdminAccess || $active === true) {
+        if (!$hasAdminAccess || $isActive === true) {
             $qb->andWhere('u.deletedAt IS NULL');
-        } elseif ($active === false) {
+        } elseif ($isActive === false) {
             $qb->andWhere('u.deletedAt IS NOT NULL');
         }
 

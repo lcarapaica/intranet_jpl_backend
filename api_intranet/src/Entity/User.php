@@ -11,7 +11,9 @@ use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
 
 /**
  * @ORM\Entity(repositoryClass=UserRepository::class)
- * @ORM\Table(name="`user`")
+ * @ORM\Table(name="`user`", indexes={
+ *     @ORM\Index(name="idx_user_deleted_at", columns={"deleted_at"})
+ * })
  * @UniqueEntity(fields={"email"}, message="This email is already registered.")
  */
 class User implements UserInterface

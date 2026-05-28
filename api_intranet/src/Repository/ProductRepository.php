@@ -23,7 +23,7 @@ class ProductRepository extends ServiceEntityRepository
             'page'               => 1,
             'limit'              => 25,
             'empresa'            => null,
-            'active'             => true,
+            'isActive'           => true,
             'sort'               => 'id',
             'order'              => 'DESC',
             'hasLogisticsAccess' => true,
@@ -36,9 +36,9 @@ class ProductRepository extends ServiceEntityRepository
         $qb = $this->createQueryBuilder('p');
 
         // 1. Activity Filter: non-logistics are forced to only see active records
-        if (!$hasLogisticsAccess || $active === true) {
+        if (!$hasLogisticsAccess || $isActive === true) {
             $qb->andWhere('p.deletedAt IS NULL');
-        } elseif ($active === false) {
+        } elseif ($isActive === false) {
             $qb->andWhere('p.deletedAt IS NOT NULL');
         }
 

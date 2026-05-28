@@ -9,6 +9,9 @@ use Symfony\Component\Validator\Constraints as Assert;
 
 /**
  * @ORM\Entity(repositoryClass=NewsRepository::class)
+ * @ORM\Table(name="news", indexes={
+ *     @ORM\Index(name="idx_news_deleted_at", columns={"deleted_at"})
+ * })
  * @ORM\HasLifecycleCallbacks
  */
 class News

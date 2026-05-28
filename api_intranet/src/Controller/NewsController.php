@@ -40,6 +40,7 @@ class NewsController extends AbstractController
      */
     public function list(Request $request, NewsRepository $repository): JsonResponse
     {
+        // Extract filter, sorting, and pagination parameters from the query string
         $search = $request->query->get('search', '');
         $category = $request->query->get('category', null);
         $limit = $request->query->getInt('limit', 25);
@@ -47,12 +48,13 @@ class NewsController extends AbstractController
         $sort = $request->query->get('sort', 'postedAt');
         $order = $request->query->get('order', 'DESC');
 
+        // Retrieve the filtered list. If the user has ROLE_NEWS_EDITOR permissions they can also view soft-deleted news articles.
         $result = $repository->searchAndPaginate([
             'search'          => $search,
             'category'        => $category,
             'limit'           => $limit,
             'page'            => $page,
-            'sort'             => $sort,
+            'sort'            => $sort,
             'order'           => $order,
             'active'          => true,
             'show_deleted_at' => $this->isGranted('ROLE_NEWS_EDITOR')
@@ -76,18 +78,22 @@ class NewsController extends AbstractController
      */
     public function show(int $id, NewsRepository $repository): JsonResponse
     {
+        // Check if the current user has news editor permissions
         $isEditor = $this->isGranted('ROLE_NEWS_EDITOR');
 
+        // Editors can fetch any article, users only active ones
         if ($isEditor) {
             $news = $repository->find($id);
         } else {
             $news = $repository->findOneBy(['id' => $id, 'deletedAt' => null]);
         }
 
+        // Return a 404 response if the article does not exist or has been soft-deleted for a non-editor
         if (!$news) {
             return $this->json(['error' => 'Noticia no encontrada'], 404);
         }
 
+        // Map the News entity properties into a clean array structure 
         $response = [
             'id'        => $news->getId(),
             'title'     => $news->getTitle(),
@@ -102,6 +108,7 @@ class NewsController extends AbstractController
             ]
         ];
 
+        // Only include the logical deletion timestamp if the user is an editor
         if ($isEditor) {
             $response['deletedAt'] = $news->getDeletedAt() ? $news->getDeletedAt()->format('Y-m-d H:i:s') : null;
         }
@@ -133,15 +140,18 @@ class NewsController extends AbstractController
      */
     public function create(Request $request, EntityManagerInterface $em, ValidatorInterface $validator): JsonResponse
     {
-        // Enforce news editor permissions (Admins inherit this via hierarchy)
+        // Enforce news editor permissions - only designated editors or admins can publish news
         if (!$this->isGranted('ROLE_NEWS_EDITOR')) {
             return $this->json(['error' => 'No tienes permisos para publicar noticias.'], 403);
         }
 
         /** @var User $user */
         $user = $this->getUser();
+
+        // Decode request payload body
         $data = json_decode($request->getContent(), true) ?: [];
 
+        // Check required fields before initializing the entity
         $titleInput = isset($data['title']) && is_scalar($data['title']) ? (string)$data['title'] : '';
         if (trim($titleInput) === '') {
             return $this->json(['error' => 'El título es obligatorio'], 400);
@@ -150,9 +160,11 @@ class NewsController extends AbstractController
         $news = new News();
         $news->setAuthor($user);
 
+        // Map request parameters into the news instance using the input DTO
         $dto = NewsInput::fromArray($data);
         $dto->updateEntity($news, array_keys($data));
 
+        // Validate the entity rules 
         $errors = $validator->validate($news);
         if (count($errors) > 0) {
             $errorMessages = [];
@@ -162,6 +174,7 @@ class NewsController extends AbstractController
             return $this->json(['error' => implode(' ', $errorMessages)], 400);
         }
 
+        // Save the new news article into the database
         $em->persist($news);
         $em->flush();
 
@@ -196,17 +209,19 @@ class NewsController extends AbstractController
      */
     public function update(int $id, Request $request, NewsRepository $repository, EntityManagerInterface $em, ValidatorInterface $validator): JsonResponse
     {
+        // Enforce generic role access for news editors
         if (!$this->isGranted('ROLE_NEWS_EDITOR')) {
             return $this->json(['error' => 'No tienes permisos para editar noticias.'], 403);
         }
 
+        // Fetch only active, non-deleted news article by ID
         $news = $repository->findOneBy(['id' => $id, 'deletedAt' => null]);
 
         if (!$news) {
             return $this->json(['error' => 'Noticia no encontrada'], 404);
         }
 
-        // Authorization check: Only the author of the post OR a full ROLE_ADMIN can edit it
+        // Only the author of the post or an admincan edit the article
         $isAuthor = ($news->getAuthor() === $this->getUser());
         $isAdmin = $this->isGranted('ROLE_ADMIN');
 
@@ -216,6 +231,7 @@ class NewsController extends AbstractController
 
         $data = json_decode($request->getContent(), true) ?: [];
 
+        // Apply provided field changes onto the existing Entity through the input DTO mapping
         $dto = NewsInput::fromArray($data);
         $dto->updateEntity($news, array_keys($data));
 
@@ -249,17 +265,19 @@ class NewsController extends AbstractController
      */
     public function delete(int $id, NewsRepository $repository, EntityManagerInterface $em): JsonResponse
     {
+        // Enforce generic role access for news editors
         if (!$this->isGranted('ROLE_NEWS_EDITOR')) {
             return $this->json(['error' => 'No tienes permisos para eliminar noticias.'], 403);
         }
 
+        // Fetch only active, non-deleted news article
         $news = $repository->findOneBy(['id' => $id, 'deletedAt' => null]);
 
         if (!$news) {
             return $this->json(['error' => 'Noticia no encontrada'], 404);
         }
 
-        // Authorization check: Only the author of the post OR a full ROLE_ADMIN can delete it
+        // Only the author of the post or an admin can delete it
         $isAuthor = ($news->getAuthor() === $this->getUser());
         $isAdmin = $this->isGranted('ROLE_ADMIN');
 
@@ -290,18 +308,19 @@ class NewsController extends AbstractController
      */
     public function toggle(int $id, NewsRepository $repository, EntityManagerInterface $em): JsonResponse
     {
+        // Enforce generic role access for news editors
         if (!$this->isGranted('ROLE_NEWS_EDITOR')) {
             return $this->json(['error' => 'No tienes permisos para modificar noticias.'], 403);
         }
 
-        // Fetch regardless of soft-delete state
+        // Fetch news article by ID, regardless of its current soft-deleted state
         $news = $repository->find($id);
 
         if (!$news) {
             return $this->json(['error' => 'Noticia no encontrada'], 404);
         }
 
-        // Authorization check: Only the author of the post OR a full ROLE_ADMIN can toggle it
+        //  Only the author of the post or an admin can toggle it
         $isAuthor = ($news->getAuthor() === $this->getUser());
         $isAdmin = $this->isGranted('ROLE_ADMIN');
 

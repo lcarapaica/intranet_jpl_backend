@@ -27,7 +27,7 @@ class ProductFilterInput
      */
     public ?string $empresa = null;
 
-    public bool $active = true;
+    public bool $isActive = true;
 
     /**
      * @Assert\Choice({"id", "nombre", "categoria", "marca", "modelo", "color", "serial", "condicion", "locacion", "cantidad", "empresa", "registeredAt"})
@@ -60,7 +60,7 @@ class ProductFilterInput
         $order = strtoupper($request->query->get('order', 'DESC'));
         $input->order = in_array($order, ['ASC', 'DESC']) ? $order : 'DESC';
         
-        $input->active = $request->query->getBoolean('active', true);
+        $input->isActive = $request->query->getBoolean('isActive', true);
         $input->hasLogisticsAccess = $hasLogisticsAccess;
         
         return $input;
@@ -74,7 +74,7 @@ class ProductFilterInput
             'page'               => $this->page,
             'limit'              => $this->limit,
             'empresa'            => $this->empresa,
-            'active'             => $this->active,
+            'isActive'           => $this->isActive,
             'sort'               => $this->sort,
             'order'              => $this->order,
             'hasLogisticsAccess' => $this->hasLogisticsAccess,
