@@ -510,6 +510,11 @@ class ChatController extends AbstractController
             return $this->json(['error' => 'Mensaje no encontrado'], 404);
         }
 
+        // Block modifying soft-deleted messages
+        if ($chatMessage->getDeletedAt() !== null) {
+            return $this->json(['error' => 'No se puede modificar un mensaje que ha sido eliminado lógicamente.'], 400);
+        }
+
         /** @var User $user */
         $user = $this->getUser();
 

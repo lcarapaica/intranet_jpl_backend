@@ -217,6 +217,11 @@ class ProductController extends AbstractController
             return $this->json(['error' => 'Producto no encontrado'], 404);
         }
 
+        // Block modifying soft-deleted products
+        if ($product->getDeletedAt() !== null) {
+            return $this->json(['error' => 'No se puede modificar un producto que ha sido eliminado lógicamente.'], 400);
+        }
+
         $content = $request->getContent();
         $data = json_decode($content, true);
 
