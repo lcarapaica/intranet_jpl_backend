@@ -249,6 +249,11 @@ class KanbanController extends AbstractController
             return $this->json(['error' => 'Tarea no encontrada o acceso denegado'], 404);
         }
 
+        // Block modifying soft-deleted tasks
+        if ($task->getDeletedAt() !== null) {
+            return $this->json(['error' => 'No se puede modificar una tarea que ha sido eliminada lógicamente.'], 400);
+        }
+
         $data = json_decode($request->getContent(), true) ?: [];
 
         if (array_key_exists('title', $data)) {

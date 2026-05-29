@@ -149,6 +149,11 @@ class UserController extends AbstractController
             return $this->json(['error' => 'Usuario no encontrado'], 404);
         }
 
+        // Block modifying soft-deleted users
+        if ($user->getDeletedAt() !== null) {
+            return $this->json(['error' => 'No se puede modificar un usuario que ha sido eliminado lógicamente.'], 400);
+        }
+
         // Checks if the user is able to edit the target user, if not blocks access
         $this->denyAccessUnlessGranted('USER_EDIT', $user);
         
