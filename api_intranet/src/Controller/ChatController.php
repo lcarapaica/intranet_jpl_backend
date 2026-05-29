@@ -66,6 +66,10 @@ class ChatController extends AbstractController
         $currentUser = $this->getUser(); // Obtains the current user
         $data = json_decode($request->getContent(), true); // Retrieves the name, type and participants of the conversation.
 
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return $this->json(['error' => 'Formato JSON inválido'], 400);
+        }
+
         // Extract and filter the list of participant IDs from the request data.
         $participantIds = $data['participantIds'] ?? [];
         $type = $data['type'] ?? (count($participantIds) > 1 ? 'group' : 'private'); // Defaults to a private chat if 2 participants, group for more.
@@ -99,6 +103,7 @@ class ChatController extends AbstractController
             // Initialize a new private conversation and create the participation records for both users.
             $conversation = new Conversation();
             $conversation->setType('private');
+            $conversation->setName(null);
 
             $p1 = new ConversationParticipant();
             $p1->setUser($currentUser);
@@ -116,9 +121,12 @@ class ChatController extends AbstractController
             $em->persist($p2);
         } else {
             // Group chat
+            if (empty($name) || trim($name) === '') {
+                return $this->json(['error' => 'El nombre es obligatorio para un chat grupal'], 400);
+            }
             $conversation = new Conversation();
             $conversation->setType('group');
-            $conversation->setName($name ?: 'Group Chat');
+            $conversation->setName(trim($name));
 
             $pSelf = new ConversationParticipant();
             $pSelf->setUser($currentUser);
@@ -202,6 +210,76 @@ class ChatController extends AbstractController
     }
 
     /**
+     * Get details of a specific conversation including participant details.
+     * 
+     * @Route("/conversations/{id}", name="get_conversation", methods={"GET"})
+     * 
+     * @OA\Get(
+     *     path="/api/chat/conversations/{id}",
+     *     summary="Obtain the information of a specific conversation and its members",
+     *     tags={"Mensajeria"},
+     *     @OA\Parameter(
+     *         name="id",
+     *         in="path",
+     *         description="ID de la conversación",
+     *         required=true,
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Información de la conversación obtenida exitosamente"
+     *     ),
+     *     @OA\Response(
+     *         response=403,
+     *         description="El usuario no participa en esta conversación"
+     *     ),
+     *     @OA\Response(
+     *         response=404,
+     *         description="Conversación no encontrada"
+     *     )
+     * )
+     */
+    public function getConversation(int $id, ConversationRepository $convRepo): JsonResponse
+    {
+        /** @var User $currentUser */
+        $currentUser = $this->getUser();
+
+        // Retrieve the conversation
+        $conversation = $convRepo->find($id);
+
+        if (!$conversation) {
+            return $this->json(['error' => 'Conversación no encontrada'], 404);
+        }
+
+        // Verify participation using optimized repository helper
+        if (!$convRepo->hasParticipant($id, $currentUser->getId())) {
+            return $this->json(['error' => 'Acceso denegado. No eres participante de esta conversación.'], 403);
+        }
+
+        // Build participants details list
+        $participantsData = [];
+        foreach ($conversation->getParticipants() as $p) {
+            $participantsData[] = [
+                'id' => $p->getUser()->getId(),
+                'name' => $p->getUser()->getDisplayName(),
+                'email' => $p->getUser()->getEmail(),
+                'role' => $p->getRole(),
+                'joinedAt' => $p->getJoinedAt()->format('c')
+            ];
+        }
+
+        // Build and return payload
+        return $this->json([
+            'id' => $conversation->getId(),
+            'name' => $conversation->getName(),
+            'type' => $conversation->getType(),
+            'createdAt' => $conversation->getCreatedAt()->format('c'),
+            'updatedAt' => $conversation->getUpdatedAt()->format('c'),
+            'participants' => $participantsData
+        ]);
+    }
+
+    /**
      * Send a real-time message to a conversation.
      * 
      * @Route("/conversations/{id}/messages", name="send_message", methods={"POST"})
@@ -254,16 +332,8 @@ class ChatController extends AbstractController
             return $this->json(['error' => 'Conversación no encontrada'], 404);
         }
 
-        // Verify participation
-        $isParticipant = false;
-        foreach ($conversation->getParticipants() as $p) {
-            if ($p->getUser()->getId() === $user->getId()) {
-                $isParticipant = true;
-                break;
-            }
-        }
-
-        if (!$isParticipant) {
+        // Verify participation using optimized repository helper
+        if (!$convRepo->hasParticipant($id, $user->getId())) {
             return $this->json(['error' => 'No eres un participante en esta conversación'], 403);
         }
 
@@ -362,16 +432,8 @@ class ChatController extends AbstractController
             return $this->json(['error' => 'Conversación no encontrada'], 404);
         }
 
-        // Verify participation
-        $isParticipant = false;
-        foreach ($conversation->getParticipants() as $p) {
-            if ($p->getUser()->getId() === $user->getId()) {
-                $isParticipant = true;
-                break;
-            }
-        }
-
-        if (!$isParticipant) {
+        // Verify participation using optimized repository helper
+        if (!$convRepo->hasParticipant($id, $user->getId())) {
             return $this->json(['error' => 'Acceso denegado'], 403);
         }
 
@@ -712,7 +774,7 @@ class ChatController extends AbstractController
      *     )
      * )
      */
-    public function addParticipant(int $id, Request $request, ConversationRepository $convRepo, UserRepository $userRepository, EntityManagerInterface $em): JsonResponse
+    public function addParticipant(int $id, Request $request, ConversationRepository $convRepo, UserRepository $userRepository, EntityManagerInterface $em, AuditLogger $auditLogger): JsonResponse
     {
         /** @var User $currentUser */
         $currentUser = $this->getUser();
@@ -801,6 +863,19 @@ class ChatController extends AbstractController
         // Apply and save all participant changes to the database.
         $em->flush();
 
+        // Audit log the addition of participants
+        if (!empty($addedUsers)) {
+            $addedUserEmails = array_map(function ($item) use ($userRepository) {
+                $u = $userRepository->find($item['userId']);
+                return $u ? $u->getEmail() : 'unknown';
+            }, $addedUsers);
+
+            $auditLogger->log('ADD_PARTICIPANT', Conversation::class, (string) $conversation->getId(), [
+                'conversation_name' => $conversation->getName(),
+                'added_participants' => $addedUserEmails
+            ]);
+        }
+
         return $this->json([
             'status' => 'success',
             'added' => $addedUsers,
@@ -849,7 +924,7 @@ class ChatController extends AbstractController
      *     )
      * )
      */
-    public function kickParticipant(int $id, int $userId, ConversationRepository $convRepo, EntityManagerInterface $em): JsonResponse
+    public function kickParticipant(int $id, int $userId, ConversationRepository $convRepo, EntityManagerInterface $em, AuditLogger $auditLogger): JsonResponse
     {
         /** @var User $currentUser */
         $currentUser = $this->getUser();
@@ -899,9 +974,18 @@ class ChatController extends AbstractController
             return $this->json(['error' => 'Participante no encontrado en esta conversación'], 404);
         }
 
+        $targetUser = $targetParticipant->getUser();
+        $targetUserEmail = $targetUser ? $targetUser->getEmail() : 'unknown';
+
         // Remove the participant relationship from the database.
         $em->remove($targetParticipant);
         $em->flush();
+
+        // Audit log the kick action
+        $auditLogger->log('KICK_PARTICIPANT', Conversation::class, (string) $conversation->getId(), [
+            'conversation_name' => $conversation->getName(),
+            'kicked_user' => $targetUserEmail
+        ]);
 
         return $this->json(['status' => 'success', 'message' => 'Usuario expulsado del grupo exitosamente']);
     }
@@ -940,7 +1024,7 @@ class ChatController extends AbstractController
      *     )
      * )
      */
-    public function leaveConversation(int $id, ConversationRepository $convRepo, EntityManagerInterface $em): JsonResponse
+    public function leaveConversation(int $id, ConversationRepository $convRepo, EntityManagerInterface $em, AuditLogger $auditLogger): JsonResponse
     {
         /** @var User $currentUser */
         $currentUser = $this->getUser();
@@ -973,6 +1057,12 @@ class ChatController extends AbstractController
         // Delete the current user's membership and save changes.
         $em->remove($targetParticipant);
         $em->flush();
+
+        // Audit log the leave action
+        $auditLogger->log('LEAVE_CONVERSATION', Conversation::class, (string) $conversation->getId(), [
+            'conversation_name' => $conversation->getName(),
+            'email' => $currentUser->getEmail()
+        ]);
 
         return $this->json(['status' => 'success', 'message' => 'Has abandonado la conversación exitosamente']);
     }
@@ -1025,7 +1115,7 @@ class ChatController extends AbstractController
      *     )
      * )
      */
-    public function updateParticipantRole(int $id, int $userId, Request $request, ConversationRepository $convRepo, EntityManagerInterface $em): JsonResponse
+    public function updateParticipantRole(int $id, int $userId, Request $request, ConversationRepository $convRepo, EntityManagerInterface $em, AuditLogger $auditLogger): JsonResponse
     {
         /** @var User $currentUser */
         $currentUser = $this->getUser();
@@ -1094,6 +1184,16 @@ class ChatController extends AbstractController
         // Apply the updated role and flush the changes.
         $targetParticipant->setRole($newRole);
         $em->flush();
+
+        // Audit log the role update
+        $targetUser = $targetParticipant->getUser();
+        $targetUserEmail = $targetUser ? $targetUser->getEmail() : 'unknown';
+
+        $auditLogger->log('UPDATE_PARTICIPANT_ROLE', Conversation::class, (string) $conversation->getId(), [
+            'conversation_name' => $conversation->getName(),
+            'target_user' => $targetUserEmail,
+            'new_role' => $newRole
+        ]);
 
         return $this->json([
             'status' => 'success',

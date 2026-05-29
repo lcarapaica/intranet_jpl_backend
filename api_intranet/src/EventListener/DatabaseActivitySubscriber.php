@@ -59,7 +59,8 @@ class DatabaseActivitySubscriber implements EventSubscriber
         // Skip logging for certain entities to avoid noise or infinite loops
         if (
             $entity instanceof AuditLog ||
-            $entity instanceof \App\Entity\RefreshToken
+            $entity instanceof \App\Entity\RefreshToken ||
+            $entity instanceof \App\Entity\ConversationParticipant
         ) {
             return;
         }
@@ -84,6 +85,14 @@ class DatabaseActivitySubscriber implements EventSubscriber
         if ($action === 'EDIT' && $entityManager instanceof EntityManagerInterface) {
             $uow = $entityManager->getUnitOfWork();
             $changes = $uow->getEntityChangeSet($entity);
+
+            // Skip Conversation edit log if the only change is the 'updatedAt' field (e.g. from new messages)
+            if ($entity instanceof \App\Entity\Conversation) {
+                $changeFields = array_keys($changes);
+                if (count($changeFields) === 1 && $changeFields[0] === 'updatedAt') {
+                    return;
+                }
+            }
             
             // Detect Soft Delete: if 'deletedAt' changed from null to something else
             if (isset($changes['deletedAt']) && $changes['deletedAt'][0] === null && $changes['deletedAt'][1] !== null) {
@@ -170,6 +179,18 @@ class DatabaseActivitySubscriber implements EventSubscriber
                 if (method_exists($entity, 'getNombre')) $data['nombre'] = $entity->getNombre();
                 if (method_exists($entity, 'getTitle')) $data['title'] = $entity->getTitle();
                 if (method_exists($entity, 'getContent')) $data['content'] = $entity->getContent();
+            }
+            
+            // Custom logic for Conversation to capture participants
+            if ($entity instanceof \App\Entity\Conversation) {
+                $participantEmails = [];
+                foreach ($entity->getParticipants() as $participant) {
+                    $pUser = $participant->getUser();
+                    if ($pUser) {
+                        $participantEmails[] = $pUser->getEmail();
+                    }
+                }
+                $data['participants'] = $participantEmails;
             }
             
             $log->setDetails($data);

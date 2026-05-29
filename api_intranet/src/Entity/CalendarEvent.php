@@ -111,7 +111,6 @@ class CalendarEvent
 
     public function __construct()
     {
-        $this->date = new \DateTime();
         $this->createdAt = new \DateTime();
         $this->updatedAt = new \DateTime();
         $this->tags = [];
@@ -160,7 +159,7 @@ class CalendarEvent
         return $this->date;
     }
 
-    public function setDate(\DateTimeInterface $date): self
+    public function setDate(?\DateTimeInterface $date): self
     {
         $this->date = $date;
         return $this;

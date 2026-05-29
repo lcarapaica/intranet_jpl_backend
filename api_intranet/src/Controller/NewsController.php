@@ -35,6 +35,7 @@ class NewsController extends AbstractController
      *     @OA\Parameter(name="page", in="query", description="Page number", @OA\Schema(type="integer", default=1)),
      *     @OA\Parameter(name="sort", in="query", description="Sort field (postedAt, updatedAt, or id)", @OA\Schema(type="string", default="postedAt")),
      *     @OA\Parameter(name="order", in="query", description="Sort order (ASC, DESC)", @OA\Schema(type="string", default="DESC")),
+     *     @OA\Parameter(name="active", in="query", description="Filter by active status (true or false) (Editors/Admins only)", @OA\Schema(type="boolean", default=true)),
      *     @OA\Response(response=200, description="List of news articles with pagination metadata")
      * )
      */
@@ -48,6 +49,15 @@ class NewsController extends AbstractController
         $sort = $request->query->get('sort', 'postedAt');
         $order = $request->query->get('order', 'DESC');
 
+        // Determine active filter. Defaults to true (active only). Non-editors are strictly forced to active=true for security.
+        $active = true;
+        if ($this->isGranted('ROLE_NEWS_EDITOR')) {
+            $activeParam = $request->query->get('active', $request->query->get('isActive'));
+            if ($activeParam !== null) {
+                $active = !in_array(strtolower(trim((string)$activeParam)), ['false', '0']);
+            }
+        }
+
         // Retrieve the filtered list. If the user has ROLE_NEWS_EDITOR permissions they can also view soft-deleted news articles.
         $result = $repository->searchAndPaginate([
             'search'          => $search,
@@ -56,7 +66,7 @@ class NewsController extends AbstractController
             'page'            => $page,
             'sort'            => $sort,
             'order'           => $order,
-            'active'          => true,
+            'active'          => $active,
             'show_deleted_at' => $this->isGranted('ROLE_NEWS_EDITOR')
         ]);
 
