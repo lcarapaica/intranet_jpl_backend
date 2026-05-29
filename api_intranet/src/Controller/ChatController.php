@@ -210,6 +210,76 @@ class ChatController extends AbstractController
     }
 
     /**
+     * Get details of a specific conversation including participant details.
+     * 
+     * @Route("/conversations/{id}", name="get_conversation", methods={"GET"})
+     * 
+     * @OA\Get(
+     *     path="/api/chat/conversations/{id}",
+     *     summary="Obtain the information of a specific conversation and its members",
+     *     tags={"Mensajeria"},
+     *     @OA\Parameter(
+     *         name="id",
+     *         in="path",
+     *         description="ID de la conversación",
+     *         required=true,
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Información de la conversación obtenida exitosamente"
+     *     ),
+     *     @OA\Response(
+     *         response=403,
+     *         description="El usuario no participa en esta conversación"
+     *     ),
+     *     @OA\Response(
+     *         response=404,
+     *         description="Conversación no encontrada"
+     *     )
+     * )
+     */
+    public function getConversation(int $id, ConversationRepository $convRepo): JsonResponse
+    {
+        /** @var User $currentUser */
+        $currentUser = $this->getUser();
+
+        // Retrieve the conversation
+        $conversation = $convRepo->find($id);
+
+        if (!$conversation) {
+            return $this->json(['error' => 'Conversación no encontrada'], 404);
+        }
+
+        // Verify participation using optimized repository helper
+        if (!$convRepo->hasParticipant($id, $currentUser->getId())) {
+            return $this->json(['error' => 'Acceso denegado. No eres participante de esta conversación.'], 403);
+        }
+
+        // Build participants details list
+        $participantsData = [];
+        foreach ($conversation->getParticipants() as $p) {
+            $participantsData[] = [
+                'id' => $p->getUser()->getId(),
+                'name' => $p->getUser()->getDisplayName(),
+                'email' => $p->getUser()->getEmail(),
+                'role' => $p->getRole(),
+                'joinedAt' => $p->getJoinedAt()->format('c')
+            ];
+        }
+
+        // Build and return payload
+        return $this->json([
+            'id' => $conversation->getId(),
+            'name' => $conversation->getName(),
+            'type' => $conversation->getType(),
+            'createdAt' => $conversation->getCreatedAt()->format('c'),
+            'updatedAt' => $conversation->getUpdatedAt()->format('c'),
+            'participants' => $participantsData
+        ]);
+    }
+
+    /**
      * Send a real-time message to a conversation.
      * 
      * @Route("/conversations/{id}/messages", name="send_message", methods={"POST"})
@@ -262,16 +332,8 @@ class ChatController extends AbstractController
             return $this->json(['error' => 'Conversación no encontrada'], 404);
         }
 
-        // Verify participation
-        $isParticipant = false;
-        foreach ($conversation->getParticipants() as $p) {
-            if ($p->getUser()->getId() === $user->getId()) {
-                $isParticipant = true;
-                break;
-            }
-        }
-
-        if (!$isParticipant) {
+        // Verify participation using optimized repository helper
+        if (!$convRepo->hasParticipant($id, $user->getId())) {
             return $this->json(['error' => 'No eres un participante en esta conversación'], 403);
         }
 
@@ -370,16 +432,8 @@ class ChatController extends AbstractController
             return $this->json(['error' => 'Conversación no encontrada'], 404);
         }
 
-        // Verify participation
-        $isParticipant = false;
-        foreach ($conversation->getParticipants() as $p) {
-            if ($p->getUser()->getId() === $user->getId()) {
-                $isParticipant = true;
-                break;
-            }
-        }
-
-        if (!$isParticipant) {
+        // Verify participation using optimized repository helper
+        if (!$convRepo->hasParticipant($id, $user->getId())) {
             return $this->json(['error' => 'Acceso denegado'], 403);
         }
 

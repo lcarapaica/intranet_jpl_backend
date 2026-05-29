@@ -85,6 +85,14 @@ class DatabaseActivitySubscriber implements EventSubscriber
         if ($action === 'EDIT' && $entityManager instanceof EntityManagerInterface) {
             $uow = $entityManager->getUnitOfWork();
             $changes = $uow->getEntityChangeSet($entity);
+
+            // Skip Conversation edit log if the only change is the 'updatedAt' field (e.g. from new messages)
+            if ($entity instanceof \App\Entity\Conversation) {
+                $changeFields = array_keys($changes);
+                if (count($changeFields) === 1 && $changeFields[0] === 'updatedAt') {
+                    return;
+                }
+            }
             
             // Detect Soft Delete: if 'deletedAt' changed from null to something else
             if (isset($changes['deletedAt']) && $changes['deletedAt'][0] === null && $changes['deletedAt'][1] !== null) {
