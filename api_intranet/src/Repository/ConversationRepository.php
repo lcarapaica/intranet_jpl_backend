@@ -53,4 +53,22 @@ class ConversationRepository extends ServiceEntityRepository
 
         return $qb->getQuery()->getResult();
     }
+
+    /**
+     * Checks if a user is an active participant in a conversation.
+     */
+    public function hasParticipant(int $conversationId, int $userId): bool
+    {
+        return (bool) $this->createQueryBuilder('c')
+            ->select('COUNT(c.id)')
+            ->innerJoin('c.participants', 'p')
+            ->where('c.id = :conversationId')
+            ->andWhere('p.user = :userId')
+            ->setParameters([
+                'conversationId' => $conversationId,
+                'userId' => $userId
+            ])
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
 }
