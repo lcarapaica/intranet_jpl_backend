@@ -44,16 +44,48 @@ class RefreshTokenAuditListener
             return;
         }
 
-        $data = json_decode($request->getContent(), true);
+        $data = json_decode($request->getContent(), true) ?: [];
         $tokenString = $data['refresh_token'] ?? $request->request->get('refresh_token');
 
         if (!$tokenString) {
             return;
         }
 
+        // Stash masked token as an identifier
+        $maskedToken = strlen($tokenString) > 8 ? substr($tokenString, 0, 8) . '...' : 'unknown';
+        $request->attributes->set('_attempted_refresh_token', $maskedToken);
+
+        // 1. Try to find the username from the database token
         $token = $this->refreshTokenManager->get($tokenString);
         if ($token) {
             $request->attributes->set('_refresh_username', $token->getUsername());
+            $request->attributes->set('_refresh_source', 'database');
+            return;
+        }
+
+        // 2. If token is invalid/deleted, try to extract username from expired JWT in Authorization header
+        $authHeader = $request->headers->get('Authorization');
+        if ($authHeader && preg_match('/Bearer\s+(.*)$/i', $authHeader, $matches)) {
+            $jwt = $matches[1];
+            $parts = explode('.', $jwt);
+            if (count($parts) === 3) {
+                $payload = json_decode(base64_decode(str_replace(['-', '_'], ['+', '/'], $parts[1])), true);
+                if ($payload) {
+                    $username = $payload['username'] ?? $payload['email'] ?? null;
+                    if ($username) {
+                        $request->attributes->set('_refresh_username', $username);
+                        $request->attributes->set('_refresh_source', 'jwt_payload');
+                        return;
+                    }
+                }
+            }
+        }
+
+        // 3. Fallback: check request body for username or email
+        $bodyUsername = $data['username'] ?? $data['email'] ?? null;
+        if ($bodyUsername) {
+            $request->attributes->set('_refresh_username', $bodyUsername);
+            $request->attributes->set('_refresh_source', 'request_body');
         }
     }
 
@@ -71,6 +103,8 @@ class RefreshTokenAuditListener
 
         $statusCode = $response->getStatusCode();
         $username = $request->attributes->get('_refresh_username');
+        $maskedToken = $request->attributes->get('_attempted_refresh_token', 'unknown');
+        $source = $request->attributes->get('_refresh_source', 'unknown');
 
         // Look up the user entity to get their ID if username is available
         $user = null;
@@ -82,14 +116,17 @@ class RefreshTokenAuditListener
 
         if ($statusCode === 200) {
             $this->auditLogger->log('TOKEN_REFRESH_SUCCESS', User::class, $userId, [
-                'email'  => $userEmail,
-                'status' => 'success'
+                'email'         => $userEmail,
+                'status'        => 'success',
+                'refresh_token' => $maskedToken
             ], $userEmail);
         } else {
             $details = [
-                'email'       => $userEmail,
-                'status'      => 'failed',
-                'status_code' => $statusCode
+                'email'         => $userEmail,
+                'status'        => 'failed',
+                'status_code'   => $statusCode,
+                'refresh_token' => $maskedToken,
+                'source'        => $source
             ];
 
             // Try to capture error message from the failure response
