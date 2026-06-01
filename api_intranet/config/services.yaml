@@ -36,6 +36,15 @@ services:
             $credentialsPath: '%env(resolve:GOOGLE_CREDENTIALS_PATH)%'
             $systemOrganizer: '%env(resolve:GOOGLE_MEET_SYSTEM_ORGANIZER)%'
 
+    App\Service\CpanelWebmailService:
+        public: true
+        arguments:
+            $cpanelHost: '%env(resolve:CPANEL_HOST)%'
+            $cpanelPort: '%env(resolve:CPANEL_PORT)%'
+            $cpanelUsername: '%env(resolve:CPANEL_USERNAME)%'
+            $cpanelApiToken: '%env(resolve:CPANEL_API_TOKEN)%'
+
+
     App\EventListener\JwtAuthenticationListener:
         tags:
             - { name: kernel.event_listener, event: lexik_jwt_authentication.on_authentication_success, method: onAuthenticationSuccessResponse }
