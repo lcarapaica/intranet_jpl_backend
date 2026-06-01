@@ -8,8 +8,8 @@ use Symfony\Component\HttpKernel\Event\TerminateEvent;
 
 /**
  * Clears expired JWT refresh tokens from the database once per day after 2 AM.
- * Runs on kernel.terminate so it executes AFTER the response is sent to the client,
- * Uses a lock file to ensure cleanup only runs once per day.
+ * Executes AFTER the response is sent to the client,
+ * Only runs once per day.
  */
 class TokenCleanupListener
 {
