@@ -406,6 +406,27 @@ class ChatController extends AbstractController
      *         required=true,
      *         @OA\Schema(type="integer")
      *     ),
+     *     @OA\Parameter(
+     *         name="limit",
+     *         in="query",
+     *         description="Número de mensajes a obtener (por defecto 50, máximo 200)",
+     *         required=false,
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\Parameter(
+     *         name="beforeId",
+     *         in="query",
+     *         description="ID de mensaje de corte para paginación hacia atrás (obtiene mensajes anteriores a este ID)",
+     *         required=false,
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\Parameter(
+     *         name="search",
+     *         in="query",
+     *         description="Palabra o frase para filtrar los mensajes de esta conversación",
+     *         required=false,
+     *         @OA\Schema(type="string")
+     *     ),
      *     @OA\Response(
      *         response=200,
      *         description="Lista de mensajes de la conversación en orden cronológico"
@@ -420,7 +441,7 @@ class ChatController extends AbstractController
      *     )
      * )
      */
-    public function getHistory(int $id, ChatMessageRepository $repository, ConversationRepository $convRepo): JsonResponse
+    public function getHistory(int $id, Request $request, ChatMessageRepository $repository, ConversationRepository $convRepo): JsonResponse
     {
         /** @var User $user */
         $user = $this->getUser();
@@ -436,13 +457,24 @@ class ChatController extends AbstractController
         if (!$convRepo->hasParticipant($id, $user->getId())) {
             return $this->json(['error' => 'Acceso denegado'], 403);
         }
+        // Establishes limits on how many messages can be retrieved at once
+        $limit = $request->query->getInt('limit', 50);
+        if ($limit <= 0) {
+            $limit = 50;
+        }
+        if ($limit > 200) {
+            $limit = 200;
+        }
 
-        // Retrieve the latest active messages in chronological order, capped at 50.
-        $messages = $repository->findBy(
-            ['conversation' => $conversation, 'deletedAt' => null],
-            ['createdAt' => 'ASC'],
-            50
-        );
+        $beforeId = $request->query->get('beforeId');
+        $beforeId = $beforeId !== null ? (int)$beforeId : null;
+        $search = $request->query->get('search');
+
+        // Retrieve the latest active messages, capped at limit.
+        $messages = $repository->findMessagesForConversation($id, $limit, $beforeId, $search);
+
+        // Format history chronologically (oldest of the batch first) by reversing the retrieved DESC array
+        $messages = array_reverse($messages);
 
         // Format the history payload including message IDs, senders, text, and timestamps.
         $data = [];
@@ -818,7 +850,7 @@ class ChatController extends AbstractController
         if (!is_array($userIdInput)) {
             $userIdInput = [$userIdInput];
         }
-        
+
         $userIds = array_unique(array_filter($userIdInput));
 
         if (empty($userIds)) {
@@ -1277,7 +1309,7 @@ class ChatController extends AbstractController
 
         // Record a system message in the chat database
         $msgContent = sprintf("Videollamada de Google Meet iniciada. Únete aquí: %s", $meetUrl);
-        
+
         $chatMessage = new ChatMessage();
         $chatMessage->setContent($msgContent);
         $chatMessage->setSender($currentUser);
