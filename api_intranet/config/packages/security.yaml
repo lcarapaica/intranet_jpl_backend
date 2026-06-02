@@ -7,7 +7,8 @@ security:
         ROLE_CALENDAR_EDITOR: ROLE_USER
         ROLE_NEWS_EDITOR: ROLE_USER
         ROLE_LOGISTICS:   ROLE_USER
-        ROLE_ADMIN:       [ROLE_LOGISTICS, ROLE_NEWS_EDITOR, ROLE_CALENDAR_EDITOR]
+        ROLE_NAS_ACCESS:  ROLE_USER
+        ROLE_ADMIN:       [ROLE_LOGISTICS, ROLE_NEWS_EDITOR, ROLE_CALENDAR_EDITOR, ROLE_NAS_ACCESS]
         ROLE_SUPER_ADMIN: ROLE_ADMIN
 
     providers:
@@ -77,6 +78,7 @@ security:
         - { path: ^/api/register, roles: ROLE_ADMIN }
         - { path: ^/api/logout, roles: IS_AUTHENTICATED_ANONYMOUSLY }
 
+        - { path: ^/api/nas, roles: ROLE_NAS_ACCESS }
         - { path: ^/reset-password, roles: IS_AUTHENTICATED_FULLY }
         - { path: ^/api/users, roles: IS_AUTHENTICATED_FULLY }
         - { path: ^/api/products, roles: IS_AUTHENTICATED_FULLY }
