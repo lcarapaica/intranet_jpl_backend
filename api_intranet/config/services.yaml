@@ -44,14 +44,6 @@ services:
             $cpanelUsername: '%env(resolve:CPANEL_USERNAME)%'
             $cpanelApiToken: '%env(resolve:CPANEL_API_TOKEN)%'
 
-    App\Service\NasStorageService:
-        public: true
-        arguments:
-            $webdavUrl: '%env(resolve:NAS_WEBDAV_URL)%'
-            $webdavUser: '%env(resolve:NAS_WEBDAV_USER)%'
-            $webdavPassword: '%env(resolve:NAS_WEBDAV_PASSWORD)%'
-            $webdavPath: '%env(resolve:NAS_WEBDAV_PATH)%'
-
 
     App\EventListener\JwtAuthenticationListener:
         tags:
