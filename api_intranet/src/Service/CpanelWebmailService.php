@@ -40,9 +40,9 @@ class CpanelWebmailService
     {
         // Detect if the credentials are placeholders or empty
         if (
-            empty($this->cpanelApiToken) || 
+            empty($this->cpanelApiToken) ||
             $this->cpanelApiToken === 'cpanel_api_token' ||
-            empty($this->cpanelUsername) || 
+            empty($this->cpanelUsername) ||
             $this->cpanelUsername === 'cpanel_user'
         ) {
             throw new \Exception("Las credenciales de cPanel no están configuradas correctamente.");
@@ -77,7 +77,7 @@ class CpanelWebmailService
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($payload));
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        
+
         // Define cPanel Authorization format: "cpanel {user}:{token}"
         $headers = [
             sprintf("Authorization: cpanel %s:%s", $this->cpanelUsername, $this->cpanelApiToken),
@@ -120,6 +120,13 @@ class CpanelWebmailService
             $errors = $result['errors'] ?? ['Error desconocido en la API de cPanel'];
             $errorMessage = implode(' | ', $errors);
             $this->logger->warning("cPanel session creation failed for email {$email}: {$errorMessage}");
+
+            // Clean up cPanel's cryptic hosting/error messages if it fails due to a missing/invalid mailbox
+            if (stripos($errorMessage, 'The request failed') !== false || stripos($errorMessage, 'cPanel & WHM') !== false) {
+                $errorMessage = "La cuenta de correo electrónico no existe o no está configurada en el servidor.";
+                throw new \Exception($errorMessage);
+            }
+
             throw new \Exception("No se pudo crear la sesión de correo: " . $errorMessage);
         }
 
