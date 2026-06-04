@@ -3,6 +3,7 @@
 namespace App\Controller;
 
 use App\Entity\User;
+use App\Service\AuditLogger;
 use App\Service\CpanelWebmailService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -15,10 +16,12 @@ use OpenApi\Annotations as OA;
 class WebmailController extends AbstractController
 {
     private $webmailService;
+    private $auditLogger;
 
-    public function __construct(CpanelWebmailService $webmailService)
+    public function __construct(CpanelWebmailService $webmailService, AuditLogger $auditLogger)
     {
         $this->webmailService = $webmailService;
+        $this->auditLogger = $auditLogger;
     }
 
     /**
@@ -64,6 +67,17 @@ class WebmailController extends AbstractController
         try {
             // Generate the secure cPanel Webmail temporary session parameters
             $ssoData = $this->webmailService->createWebmailSession($email);
+            
+            // Log the webmail access action
+            $this->auditLogger->log(
+                'WEBMAIL_ACCESS',
+                User::class,
+                (string) $user->getId(),
+                [
+                    'email' => $email,
+                    'hostname' => $ssoData['hostname'] ?? null
+                ]
+            );
             
             return new JsonResponse($ssoData, 200);
         } catch (\Exception $e) {
