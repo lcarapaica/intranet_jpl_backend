@@ -77,17 +77,20 @@ class NewsRepository extends ServiceEntityRepository
         $order = strtoupper($order) === 'ASC' ? 'ASC' : 'DESC';
         $qb->orderBy('n.' . $sort, $order);
 
-        // 5. Pagination offset
+        // Pagination: Get total items count first using a cloned query builder
+        $countQb = clone $qb;
+        $countQb->select('COUNT(n.id)');
+        $totalItems = (int) $countQb->getQuery()->getSingleScalarResult();
+        $totalPages = ceil($totalItems / $limit);
+
+        // Fetch paginated news
         $offset = ($page - 1) * $limit;
         $qb->setFirstResult($offset)
            ->setMaxResults($limit);
-
-        $paginator = new Paginator($qb);
-        $totalItems = count($paginator);
-        $totalPages = ceil($totalItems / $limit);
+        $newsItems = $qb->getQuery()->getResult();
 
         $data = [];
-        foreach ($paginator as $news) {
+        foreach ($newsItems as $news) {
             $newsArray = [
                 'id'        => $news->getId(),
                 'title'     => $news->getTitle(),

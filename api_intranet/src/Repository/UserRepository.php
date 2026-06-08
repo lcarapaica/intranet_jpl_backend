@@ -101,18 +101,20 @@ class UserRepository extends ServiceEntityRepository implements PasswordUpgrader
         $order = strtoupper($order) === 'ASC' ? 'ASC' : 'DESC';
         $qb->orderBy('u.' . $sort, $order);
 
-        // Calculate offset limits for SQL pagination
+        // Pagination: Get total items count first using a cloned query builder
+        $countQb = clone $qb;
+        $countQb->select('COUNT(u.id)');
+        $totalItems = (int) $countQb->getQuery()->getSingleScalarResult();
+        $totalPages = ceil((int)$totalItems / $limit);
+
+        // Fetch paginated users
         $qb->setFirstResult(($page - 1) * $limit)
             ->setMaxResults($limit);
-
-        // Use Doctrine Paginator to calculate accurate totals
-        $paginator = new Paginator($qb);
-        $totalItems = count($paginator);
-        $totalPages = ceil((int)$totalItems / $limit);
+        $users = $qb->getQuery()->getResult();
 
         // Map database objects into a clean associative array
         $data = [];
-         foreach ($paginator as $user) {
+         foreach ($users as $user) {
              $roles = $user->getRoles();
              $role = count($roles) > 0 ? $roles[0] : 'ROLE_USER';
 
