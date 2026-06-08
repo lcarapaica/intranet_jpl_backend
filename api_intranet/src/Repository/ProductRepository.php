@@ -55,7 +55,7 @@ class ProductRepository extends ServiceEntityRepository
             foreach ($words as $word) {
                 $word = trim($word);
                 if ($word === '') continue;
-                
+
                 $paramName = 'term_' . $i;
                 $qb->andWhere(
                     $qb->expr()->orX(
@@ -82,17 +82,20 @@ class ProductRepository extends ServiceEntityRepository
         $order = strtoupper($order) === 'ASC' ? 'ASC' : 'DESC';
         $qb->orderBy('p.' . $sort, $order);
 
-        // Pagination
+        // Pagination: Get total items count first using a cloned query builder
+        $countQb = clone $qb;
+        $countQb->select('COUNT(p.id)');
+        $totalItems = (int) $countQb->getQuery()->getSingleScalarResult();
+        $totalPages = ceil($totalItems / $limit);
+
+        // Fetch paginated products
         $offset = ($page - 1) * $limit;
         $qb->setFirstResult($offset)
             ->setMaxResults($limit);
-
-        $paginator = new Paginator($qb);
-        $totalItems = count($paginator);
-        $totalPages = ceil($totalItems / $limit);
+        $products = $qb->getQuery()->getResult();
 
         $data = [];
-        foreach ($paginator as $product) {
+        foreach ($products as $product) {
             $productArray = [
                 'id'              => $product->getId(),
                 'nombre'          => $product->getNombre(),
