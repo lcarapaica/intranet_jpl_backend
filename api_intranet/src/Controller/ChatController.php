@@ -214,7 +214,7 @@ class ChatController extends AbstractController
                 'id' => $conv->getId(),
                 'type' => $conv->getType(),
                 'name' => $conv->getName(),
-                'lastUpdatedAt' => $conv->getUpdatedAt()->format('c'),
+                'lastUpdatedAt' => $conv->getUpdatedAt() ? $conv->getUpdatedAt()->format('c') : $conv->getCreatedAt()->format('c'),
                 'participants' => $participants,
                 'unreadCount' => $unreadCount
             ];
