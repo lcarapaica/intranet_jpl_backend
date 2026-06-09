@@ -69,4 +69,47 @@ class ChatMessageRepository extends ServiceEntityRepository
             ->getQuery()
             ->getResult();
     }
+
+    /**
+     * Counts active messages in a conversation that are unread by a user.
+     */
+    public function countUnreadMessages(int $conversationId, int $userId, \DateTimeInterface $joinedAt, ?\DateTimeInterface $lastReadAt): int
+    {
+        $qb = $this->createQueryBuilder('m')
+            ->select('COUNT(m.id)')
+            ->where('m.conversation = :conversationId')
+            ->andWhere('m.sender != :userId')
+            ->andWhere('m.deletedAt IS NULL')
+            ->andWhere('m.createdAt >= :joinedAt')
+            ->setParameter('conversationId', $conversationId)
+            ->setParameter('userId', $userId)
+            ->setParameter('joinedAt', $joinedAt);
+
+        if ($lastReadAt !== null) {
+            $qb->andWhere('m.createdAt > :lastReadAt')
+                ->setParameter('lastReadAt', $lastReadAt);
+        }
+
+        return (int) $qb->getQuery()->getSingleScalarResult();
+    }
+
+    /**
+     * Counts all unread messages across all active conversations for a user.
+     */
+    public function countTotalUnreadMessagesForUser(int $userId): int
+    {
+        $qb = $this->createQueryBuilder('m')
+            ->select('COUNT(m.id)')
+            ->innerJoin('App\Entity\ConversationParticipant', 'cp', 'WITH', 'm.conversation = cp.conversation')
+            ->where('cp.user = :userId')
+            ->andWhere('cp.deletedAt IS NULL')
+            ->andWhere('m.sender != :userId')
+            ->andWhere('m.deletedAt IS NULL')
+            ->andWhere('m.createdAt >= cp.joinedAt')
+            ->andWhere('cp.lastReadAt IS NULL OR m.createdAt > cp.lastReadAt')
+            ->setParameter('userId', $userId);
+
+        return (int) $qb->getQuery()->getSingleScalarResult();
+    }
 }
+

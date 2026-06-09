@@ -173,7 +173,7 @@ class ChatController extends AbstractController
      *     )
      * )
      */
-    public function listConversations(ConversationRepository $convRepo): JsonResponse
+    public function listConversations(ConversationRepository $convRepo, ChatMessageRepository $msgRepo): JsonResponse
     {
         // Retrieve the currently authenticated user from the security context.
         /** @var User $user */
@@ -185,9 +185,13 @@ class ChatController extends AbstractController
         // Build the response payload containing details for each conversation.
         $data = [];
         foreach ($conversations as $conv) {
+            $currentUserParticipant = null;
             $participants = [];
             // Gather participant details, excluding the current user in private chats for cleaner response.
             foreach ($conv->getParticipants() as $p) {
+                if ($p->getUser()->getId() === $user->getId()) {
+                    $currentUserParticipant = $p;
+                }
                 if ($p->getUser()->getId() !== $user->getId() || $conv->getType() === 'group') {
                     $participants[] = [
                         'id' => $p->getUser()->getId(),
@@ -196,17 +200,53 @@ class ChatController extends AbstractController
                 }
             }
 
+            $unreadCount = 0;
+            if ($currentUserParticipant) {
+                $unreadCount = $msgRepo->countUnreadMessages(
+                    $conv->getId(),
+                    $user->getId(),
+                    $currentUserParticipant->getJoinedAt(),
+                    $currentUserParticipant->getLastReadAt()
+                );
+            }
+
             $data[] = [
                 'id' => $conv->getId(),
                 'type' => $conv->getType(),
                 'name' => $conv->getName(),
                 'lastUpdatedAt' => $conv->getUpdatedAt()->format('c'),
-                'participants' => $participants
+                'participants' => $participants,
+                'unreadCount' => $unreadCount
             ];
         }
 
         // Return the formatted list of conversations as a JSON response.
         return $this->json($data);
+    }
+
+    /**
+     * Get the total unread message count for the authenticated user.
+     * 
+     * @Route("/conversations/unread-count", name="unread_count", methods={"GET"})
+     * 
+     * @OA\Get(
+     *     path="/api/chat/conversations/unread-count",
+     *     summary="Get the total unread messages count for the authenticated user",
+     *     tags={"Mensajeria"},
+     *     @OA\Response(
+     *         response=200,
+     *         description="Total de mensajes no leídos devuelto exitosamente"
+     *     )
+     * )
+     */
+    public function getUnreadCount(ChatMessageRepository $msgRepo): JsonResponse
+    {
+        /** @var User $user */
+        $user = $this->getUser();
+
+        $unreadCount = $msgRepo->countTotalUnreadMessagesForUser($user->getId());
+
+        return $this->json(['unreadCount' => $unreadCount]);
     }
 
     /**
@@ -353,10 +393,14 @@ class ChatController extends AbstractController
 
         $conversation->setUpdatedAt(new \DateTime());
 
-        // Restore/unhide conversation for any participant who deleted/hid it previously
+        // Restore/unhide conversation for any participant who deleted/hid it previously,
+        // and update the sender's lastReadAt timestamp.
         foreach ($conversation->getParticipants() as $p) {
             if ($p->getDeletedAt() !== null) {
                 $p->setDeletedAt(null);
+            }
+            if ($p->getUser()->getId() === $user->getId()) {
+                $p->setLastReadAt(new \DateTime());
             }
         }
 
@@ -441,7 +485,7 @@ class ChatController extends AbstractController
      *     )
      * )
      */
-    public function getHistory(int $id, Request $request, ChatMessageRepository $repository, ConversationRepository $convRepo): JsonResponse
+    public function getHistory(int $id, Request $request, ChatMessageRepository $repository, ConversationRepository $convRepo, EntityManagerInterface $em): JsonResponse
     {
         /** @var User $user */
         $user = $this->getUser();
@@ -457,6 +501,15 @@ class ChatController extends AbstractController
         if (!$convRepo->hasParticipant($id, $user->getId())) {
             return $this->json(['error' => 'Acceso denegado'], 403);
         }
+
+        // Update user's lastReadAt timestamp for this conversation
+        foreach ($conversation->getParticipants() as $p) {
+            if ($p->getUser()->getId() === $user->getId()) {
+                $p->setLastReadAt(new \DateTime());
+                break;
+            }
+        }
+        $em->flush();
         // Establishes limits on how many messages can be retrieved at once
         $limit = $request->query->getInt('limit', 50);
         if ($limit <= 0) {
@@ -1316,10 +1369,14 @@ class ChatController extends AbstractController
         $chatMessage->setConversation($conversation);
         $conversation->setUpdatedAt(new \DateTime());
 
-        // Restore/unhide conversation for any participant who deleted/hid it previously
+        // Restore/unhide conversation for any participant who deleted/hid it previously,
+        // and update the creator's lastReadAt timestamp.
         foreach ($conversation->getParticipants() as $p) {
             if ($p->getDeletedAt() !== null) {
                 $p->setDeletedAt(null);
+            }
+            if ($p->getUser()->getId() === $currentUser->getId()) {
+                $p->setLastReadAt(new \DateTime());
             }
         }
 
@@ -1479,5 +1536,64 @@ class ChatController extends AbstractController
             'message' => 'Conversación renombrada exitosamente',
             'name' => $newName
         ], 200);
+    }
+
+    /**
+     * Mark a conversation as read for the authenticated user.
+     * 
+     * @Route("/conversations/{id}/read", name="mark_conversation_read", methods={"POST"})
+     * 
+     * @OA\Post(
+     *     path="/api/chat/conversations/{id}/read",
+     *     summary="Mark a conversation as read for the authenticated user",
+     *     tags={"Mensajeria"},
+     *     @OA\Parameter(
+     *         name="id",
+     *         in="path",
+     *         description="ID de la conversación",
+     *         required=true,
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Conversación marcada como leída exitosamente"
+     *     ),
+     *     @OA\Response(
+     *         response=403,
+     *         description="No autorizado (no eres participante)"
+     *     ),
+     *     @OA\Response(
+     *         response=404,
+     *         description="Conversación no encontrada"
+     *     )
+     * )
+     */
+    public function markAsRead(int $id, ConversationRepository $convRepo, EntityManagerInterface $em): JsonResponse
+    {
+        /** @var User $user */
+        $user = $this->getUser();
+
+        $conversation = $convRepo->find($id);
+
+        if (!$conversation) {
+            return $this->json(['error' => 'Conversación no encontrada'], 404);
+        }
+
+        $participant = null;
+        foreach ($conversation->getParticipants() as $p) {
+            if ($p->getUser()->getId() === $user->getId() && $p->getDeletedAt() === null) {
+                $participant = $p;
+                break;
+            }
+        }
+
+        if (!$participant) {
+            return $this->json(['error' => 'No eres un participante activo en esta conversación'], 403);
+        }
+
+        $participant->setLastReadAt(new \DateTime());
+        $em->flush();
+
+        return $this->json(['status' => 'success', 'message' => 'Conversación marcada como leída']);
     }
 }
