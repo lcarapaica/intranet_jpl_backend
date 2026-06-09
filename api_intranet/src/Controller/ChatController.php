@@ -1352,4 +1352,132 @@ class ChatController extends AbstractController
 
         return $this->json($payload, 201);
     }
+
+    /**
+     * Rename a group conversation.
+     * 
+     * @Route("/conversations/{id}", name="rename_conversation", methods={"PUT"})
+     * 
+     * @OA\Put(
+     *     path="/api/chat/conversations/{id}",
+     *     summary="Rename a group conversation (group admins only)",
+     *     tags={"Mensajeria"},
+     *     @OA\Parameter(
+     *         name="id",
+     *         in="path",
+     *         description="ID de la conversación grupal",
+     *         required=true,
+     *         @OA\Schema(type="integer")
+     *     ),
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(property="name", type="string", example="Nuevo Nombre del Grupo")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Conversación renombrada exitosamente"
+     *     ),
+     *     @OA\Response(
+     *         response=400,
+     *         description="Petición incorrecta o no es una conversación grupal"
+     *     ),
+     *     @OA\Response(
+     *         response=403,
+     *         description="No autorizado o no eres administrador de la conversación"
+     *     ),
+     *     @OA\Response(
+     *         response=404,
+     *         description="Conversación no encontrada"
+     *     )
+     * )
+     */
+    public function renameConversation(int $id, Request $request, ConversationRepository $convRepo, EntityManagerInterface $em, HubInterface $hub, AuditLogger $auditLogger): JsonResponse
+    {
+        /** @var User $currentUser */
+        $currentUser = $this->getUser();
+
+        $conversation = $convRepo->find($id);
+        if (!$conversation) {
+            return $this->json(['error' => 'Conversación no encontrada'], 404);
+        }
+
+        // Only group conversations can be renamed
+        if ($conversation->getType() !== 'group') {
+            return $this->json(['error' => 'No se puede renombrar una conversación privada'], 400);
+        }
+
+        // Verify user participation and admin role
+        $isGroupAdmin = false;
+        $isParticipant = false;
+        foreach ($conversation->getParticipants() as $p) {
+            if ($p->getUser()->getId() === $currentUser->getId()) {
+                $isParticipant = true;
+                if ($p->getRole() === 'admin') {
+                    $isGroupAdmin = true;
+                }
+                break;
+            }
+        }
+
+        if (!$isParticipant) {
+            return $this->json(['error' => 'No eres un participante en esta conversación'], 403);
+        }
+
+        if (!$isGroupAdmin) {
+            return $this->json(['error' => 'Solo los administradores de la conversación pueden cambiar el nombre'], 403);
+        }
+
+        // Validate input
+        $data = json_decode($request->getContent(), true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return $this->json(['error' => 'Formato JSON inválido'], 400);
+        }
+
+        $newName = isset($data['name']) ? trim((string)$data['name']) : '';
+        if ($newName === '') {
+            return $this->json(['error' => 'El nombre no puede estar vacío'], 400);
+        }
+
+        $oldName = $conversation->getName();
+
+        $conversation->setName($newName);
+        $conversation->setUpdatedAt(new \DateTime());
+
+        $em->flush();
+
+        // Log it
+        $auditLogger->log('RENAME_CONVERSATION', Conversation::class, (string) $conversation->getId(), [
+            'old_name' => $oldName,
+            'new_name' => $newName
+        ]);
+
+        // Broadcast Mercure notification
+        $payload = [
+            'type' => 'conversation_renamed',
+            'conversationId' => $conversation->getId(),
+            'name' => $newName,
+            'updatedAt' => $conversation->getUpdatedAt()->format('c')
+        ];
+
+        $update = new Update(
+            "conversations/{$conversation->getId()}",
+            json_encode($payload),
+            true
+        );
+
+        try {
+            $hub->publish($update);
+        } catch (\Exception $e) {
+            error_log('Mercure publish failed on rename: ' . $e->getMessage());
+        }
+
+        return $this->json([
+            'status' => 'success',
+            'message' => 'Conversación renombrada exitosamente',
+            'name' => $newName
+        ], 200);
+    }
 }
