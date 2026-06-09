@@ -41,7 +41,6 @@ class ChatMessageRepository extends ServiceEntityRepository
         if ($search !== null && trim($search) !== '') {
             $conn = $this->getEntityManager()->getConnection();
             $escapedSearch = preg_quote(trim($search), '/');
-            $escapedSearch = str_replace('\\', '\\\\', $escapedSearch);
             // Universal exact word boundary pattern matching alphanumeric and accented characters
             $pattern = '(^|[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ])' . $escapedSearch . '($|[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ])';
 
@@ -106,7 +105,7 @@ class ChatMessageRepository extends ServiceEntityRepository
             ->andWhere('m.sender != :userId')
             ->andWhere('m.deletedAt IS NULL')
             ->andWhere('m.createdAt >= cp.joinedAt')
-            ->andWhere('cp.lastReadAt IS NULL OR m.createdAt > cp.lastReadAt')
+            ->andWhere('(cp.lastReadAt IS NULL OR m.createdAt > cp.lastReadAt)')
             ->setParameter('userId', $userId);
 
         return (int) $qb->getQuery()->getSingleScalarResult();
