@@ -5,6 +5,7 @@ namespace App\Controller;
 use App\Entity\CalendarEvent;
 use App\Entity\User;
 use App\Repository\CalendarEventRepository;
+use App\Repository\UserRepository;
 use App\Dto\CalendarEventInput;
 use App\Dto\CalendarEventOutput;
 use Doctrine\ORM\EntityManagerInterface;
@@ -125,8 +126,8 @@ class CalendarController extends AbstractController
             return $this->json(['error' => 'Evento no encontrado'], 404);
         }
 
-        // Users can only see company-wide events or events they created themselves
-        if (!$event->getIsCompanyWide() && $event->getOwner() !== $user) {
+        // Users can only see company-wide events, events they created themselves, or events where they are a participant
+        if (!$event->getIsCompanyWide() && $event->getOwner() !== $user && !$event->getParticipants()->contains($user)) {
             return $this->json(['error' => 'Acceso denegado a este evento'], 403);
         }
 
@@ -153,7 +154,10 @@ class CalendarController extends AbstractController
      *             @OA\Property(property="endAt", type="string", format="date-time", example="2026-06-01 11:30:00", nullable=true),
      *             @OA\Property(property="tags", type="array", @OA\Items(type="string"), example={"tecnologia", "reunion"}),
      *             @OA\Property(property="isCompanyWide", type="boolean", example=false),
-     *             @OA\Property(property="reminderAt", type="string", format="date-time", example="2026-06-01 09:30:00", nullable=true)
+     *             @OA\Property(property="reminderAt", type="string", format="date-time", example="2026-06-01 09:30:00", nullable=true),
+     *             @OA\Property(property="cliente", type="string", example="Cliente XYZ", nullable=true),
+     *             @OA\Property(property="color", type="string", example="#FFAA00", nullable=true),
+     *             @OA\Property(property="participants", type="array", @OA\Items(type="integer"), example={1, 2})
      *         )
      *     ),
      *     @OA\Response(response=201, description="Event successfully created"),
@@ -161,7 +165,7 @@ class CalendarController extends AbstractController
      *     @OA\Response(response=403, description="Insufficient permissions to create company-wide events")
      * )
      */
-    public function create(Request $request, EntityManagerInterface $em, ValidatorInterface $validator): JsonResponse
+    public function create(Request $request, EntityManagerInterface $em, ValidatorInterface $validator, UserRepository $userRepository): JsonResponse
     {
         /** @var User $user */
         $user = $this->getUser();
@@ -186,6 +190,9 @@ class CalendarController extends AbstractController
         } catch (\Exception $e) {
             return $this->json(['error' => 'Formato de fecha inválido: ' . $e->getMessage()], 400);
         }
+
+        // Handle participants mapping
+        $this->handleParticipants($event, $data, array_keys($data), $userRepository, $user);
 
         // Entity validation check
         $errors = $validator->validate($event);
@@ -236,7 +243,10 @@ class CalendarController extends AbstractController
      *             @OA\Property(property="startAt", type="string", format="date-time", nullable=true),
      *             @OA\Property(property="endAt", type="string", format="date-time", nullable=true),
      *             @OA\Property(property="tags", type="array", @OA\Items(type="string")),
-     *             @OA\Property(property="reminderAt", type="string", format="date-time", nullable=true)
+     *             @OA\Property(property="reminderAt", type="string", format="date-time", nullable=true),
+     *             @OA\Property(property="cliente", type="string", example="Cliente XYZ", nullable=true),
+     *             @OA\Property(property="color", type="string", example="#FFAA00", nullable=true),
+     *             @OA\Property(property="participants", type="array", @OA\Items(type="integer"), example={1, 2})
      *         )
      *     ),
      *     @OA\Response(response=200, description="Event successfully updated"),
@@ -244,7 +254,7 @@ class CalendarController extends AbstractController
      *     @OA\Response(response=404, description="Event not found")
      * )
      */
-    public function update(int $id, Request $request, CalendarEventRepository $repository, EntityManagerInterface $em, ValidatorInterface $validator): JsonResponse
+    public function update(int $id, Request $request, CalendarEventRepository $repository, EntityManagerInterface $em, ValidatorInterface $validator, UserRepository $userRepository): JsonResponse
     {
         /** @var User $user */
         $user = $this->getUser();
@@ -277,6 +287,9 @@ class CalendarController extends AbstractController
         } catch (\Exception $e) {
             return $this->json(['error' => 'Formato de fecha inválido: ' . $e->getMessage()], 400);
         }
+
+        // Handle participants mapping
+        $this->handleParticipants($event, $data, array_keys($data), $userRepository, $user);
 
         $errors = $validator->validate($event);
         if (count($errors) > 0) {
@@ -400,5 +413,49 @@ class CalendarController extends AbstractController
             'message'  => $message,
             'isActive' => $event->isActive()
         ]);
+    }
+
+    /**
+     * Helper to set participants on CalendarEvent according to rules.
+     */
+    private function handleParticipants(
+        CalendarEvent $event,
+        array $data,
+        ?array $providedFields,
+        UserRepository $userRepository,
+        User $currentUser
+    ): void {
+        // If this is an update and 'participants' key was not provided, do nothing
+        if ($providedFields !== null && !in_array('participants', $providedFields)) {
+            return;
+        }
+
+        // If the event isn't company-wide
+        if (!$event->getIsCompanyWide()) {
+            if (!isset($data['participants']) || !is_array($data['participants']) || empty($data['participants'])) {
+                // If none written, then only the creator
+                $event->getParticipants()->clear();
+                $event->addParticipant($event->getOwner() ?? $currentUser);
+            } else {
+                $event->getParticipants()->clear();
+                foreach ($data['participants'] as $pId) {
+                    $pUser = $userRepository->find($pId);
+                    if ($pUser) {
+                        $event->addParticipant($pUser);
+                    }
+                }
+            }
+        } else {
+            // Company-wide event: set participants if provided, otherwise leave empty or clear
+            $event->getParticipants()->clear();
+            if (isset($data['participants']) && is_array($data['participants'])) {
+                foreach ($data['participants'] as $pId) {
+                    $pUser = $userRepository->find($pId);
+                    if ($pUser) {
+                        $event->addParticipant($pUser);
+                    }
+                }
+            }
+        }
     }
 }

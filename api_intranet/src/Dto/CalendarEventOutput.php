@@ -3,6 +3,7 @@
 namespace App\Dto;
 
 use App\Entity\CalendarEvent;
+use App\Entity\User;
 
 class CalendarEventOutput
 {
@@ -23,6 +24,14 @@ class CalendarEventOutput
             'isCompanyWide' => $event->getIsCompanyWide(),
             'isActive'      => $event->isActive(),
             'reminderAt'    => $event->getReminderAt() ? $event->getReminderAt()->format('Y-m-d H:i:s') : null,
+            'cliente'       => $event->getCliente(),
+            'color'         => $event->getColor(),
+            'participants'  => array_map(function (User $p) {
+                return [
+                    'id'   => $p->getId(),
+                    'name' => $p->getDisplayName()
+                ];
+            }, $event->getParticipants()->toArray()),
             'owner'         => $event->getOwner() ? [
                 'id'   => $event->getOwner()->getId(),
                 'name' => $event->getOwner()->getDisplayName()
