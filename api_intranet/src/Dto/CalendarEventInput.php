@@ -15,6 +15,9 @@ class CalendarEventInput
     public ?array $tags = null;
     public ?bool $isCompanyWide = null;
     public ?string $reminderAt = null;
+    public ?array $participants = null;
+    public ?string $cliente = null;
+    public ?string $color = null;
 
     public static function fromArray(array $data): self
     {
@@ -28,6 +31,9 @@ class CalendarEventInput
         $dto->tags = isset($data['tags']) && is_array($data['tags']) ? $data['tags'] : null;
         $dto->isCompanyWide = isset($data['isCompanyWide']) ? (bool)$data['isCompanyWide'] : null;
         $dto->reminderAt = isset($data['reminderAt']) && is_scalar($data['reminderAt']) ? (string)$data['reminderAt'] : null;
+        $dto->participants = isset($data['participants']) && is_array($data['participants']) ? $data['participants'] : null;
+        $dto->cliente = isset($data['cliente']) && is_scalar($data['cliente']) ? (string)$data['cliente'] : null;
+        $dto->color = isset($data['color']) && is_scalar($data['color']) ? (string)$data['color'] : null;
         return $dto;
     }
 
@@ -83,6 +89,12 @@ class CalendarEventInput
         }
         if (in_array('reminderAt', $providedFields)) {
             $event->setReminderAt($this->reminderAt ? new \DateTime($this->reminderAt) : null);
+        }
+        if (in_array('cliente', $providedFields)) {
+            $event->setCliente($this->cliente);
+        }
+        if (in_array('color', $providedFields)) {
+            $event->setColor($this->color);
         }
     }
 }

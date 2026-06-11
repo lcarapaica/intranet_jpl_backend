@@ -3,6 +3,8 @@
 namespace App\Entity;
 
 use App\Repository\CalendarEventRepository;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -79,6 +81,33 @@ class CalendarEvent
     private $isCompanyWide = false;
 
     /**
+     * @ORM\Column(type="string", length=255, nullable=true)
+     * @Assert\Length(max=255, maxMessage="El cliente no puede superar los 255 caracteres")
+     * @Groups({"calendar:read"})
+     */
+    private $cliente;
+
+    /**
+     * @ORM\Column(type="string", length=7, nullable=true)
+     * @Assert\Regex(
+     *     pattern="/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/",
+     *     message="El color debe tener un formato hexadecimal válido (ej: #FFFFFF)"
+     * )
+     * @Groups({"calendar:read"})
+     */
+    private $color;
+
+    /**
+     * @ORM\ManyToMany(targetEntity=User::class)
+     * @ORM\JoinTable(name="calendar_event_user",
+     *      joinColumns={@ORM\JoinColumn(name="calendar_event_id", referencedColumnName="id", onDelete="CASCADE")},
+     *      inverseJoinColumns={@ORM\JoinColumn(name="user_id", referencedColumnName="id", onDelete="CASCADE")}
+     * )
+     * @Groups({"calendar:read"})
+     */
+    private $participants;
+
+    /**
      * @ORM\ManyToOne(targetEntity=User::class)
      * @ORM\JoinColumn(nullable=true, onDelete="CASCADE")
      * @Groups({"calendar:read"})
@@ -114,6 +143,7 @@ class CalendarEvent
         $this->createdAt = new \DateTime();
         $this->updatedAt = new \DateTime();
         $this->tags = [];
+        $this->participants = new ArrayCollection();
     }
 
     public function getId(): ?int
@@ -271,6 +301,50 @@ class CalendarEvent
     public function updateTimestamp(): void
     {
         $this->updatedAt = new \DateTime();
+    }
+
+    public function getCliente(): ?string
+    {
+        return $this->cliente;
+    }
+
+    public function setCliente(?string $cliente): self
+    {
+        $this->cliente = $cliente;
+        return $this;
+    }
+
+    public function getColor(): ?string
+    {
+        return $this->color;
+    }
+
+    public function setColor(?string $color): self
+    {
+        $this->color = $color;
+        return $this;
+    }
+
+    /**
+     * @return Collection|User[]
+     */
+    public function getParticipants(): Collection
+    {
+        return $this->participants ?: new ArrayCollection();
+    }
+
+    public function addParticipant(User $participant): self
+    {
+        if (!$this->getParticipants()->contains($participant)) {
+            $this->participants[] = $participant;
+        }
+        return $this;
+    }
+
+    public function removeParticipant(User $participant): self
+    {
+        $this->getParticipants()->removeElement($participant);
+        return $this;
     }
 
     public function isActive(): bool
