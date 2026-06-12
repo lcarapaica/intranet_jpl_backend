@@ -6,6 +6,7 @@ use App\Entity\Product;
 
 class ProductInput
 {
+    public ?int $id = null;
     public ?string $nombre = null;
     public ?string $categoria = null;
     public ?string $marca = null;
@@ -23,6 +24,7 @@ class ProductInput
     public static function fromArray(array $data): self
     {
         $dto = new self();
+        $dto->id = isset($data['id']) ? (int)$data['id'] : null;
         $dto->nombre = $data['nombre'] ?? null;
         $dto->categoria = $data['categoria'] ?? null;
         $dto->marca = $data['marca'] ?? null;
@@ -76,6 +78,9 @@ class ProductInput
         }
         if (in_array('registeredAt', $providedFields)) {
             $product->setRegisteredAt($this->registeredAt ? new \DateTime($this->registeredAt) : null);
+        }
+        if (in_array('id', $providedFields) && $this->id !== null) {
+            $product->setId($this->id);
         }
     }
 }

@@ -53,21 +53,21 @@ class CalendarController extends AbstractController
         // Parse the boolean filter, falling back to active events if the param is invalid or omitted
         $isActive = filter_var($isActiveParam, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? true;
 
-        // Admins and editors are allowed to include soft-deleted calendar events in the feed
-        $isAdminOrEditor = $this->isGranted('ROLE_CALENDAR_EDITOR');
+        // Admins are allowed to include soft-deleted calendar events in the feed
+        $isAdmin = $this->isGranted('ROLE_ADMIN');
 
         $events = $repository->findUserEventsFeed($user, [
             'start' => $start,
             'end'   => $end,
             'tag'   => $tag,
             'type'  => $type,
-            'include_deleted' => $isAdminOrEditor && !$isActive,
-            'only_deleted' => $isAdminOrEditor && !$isActive
+            'include_deleted' => $isAdmin && !$isActive,
+            'only_deleted' => $isAdmin && !$isActive
         ]);
 
         $data = [];
         foreach ($events as $event) {
-            $data[] = CalendarEventOutput::fromEntity($event, $isAdminOrEditor);
+            $data[] = CalendarEventOutput::fromEntity($event, $isAdmin);
         }
 
         return $this->json($data);
@@ -119,10 +119,10 @@ class CalendarController extends AbstractController
         $user = $this->getUser();
         $event = $repository->find($id);
 
-        $isAdminOrEditor = $this->isGranted('ROLE_CALENDAR_EDITOR');
+        $isAdmin = $this->isGranted('ROLE_ADMIN');
 
-        // Only calendar editors and admins are allowed to retrieve soft-deleted events
-        if (!$event || ($event->getDeletedAt() !== null && !$isAdminOrEditor)) {
+        // Only admins are allowed to retrieve soft-deleted events
+        if (!$event || ($event->getDeletedAt() !== null && !$isAdmin)) {
             return $this->json(['error' => 'Evento no encontrado'], 404);
         }
 
@@ -131,7 +131,7 @@ class CalendarController extends AbstractController
             return $this->json(['error' => 'Acceso denegado a este evento'], 403);
         }
 
-        return $this->json(CalendarEventOutput::fromEntity($event, $isAdminOrEditor));
+        return $this->json(CalendarEventOutput::fromEntity($event, $isAdmin));
     }
 
     /**
@@ -172,11 +172,6 @@ class CalendarController extends AbstractController
         $data = json_decode($request->getContent(), true) ?: [];
 
         $isCompanyWideInput = isset($data['isCompanyWide']) && (bool)$data['isCompanyWide'];
-
-        // Enforce calendar editor permissions for company-wide events
-        if ($isCompanyWideInput && !$this->isGranted('ROLE_CALENDAR_EDITOR')) {
-            return $this->json(['error' => 'No tienes permisos para crear eventos globales/de la empresa.'], 403);
-        }
 
         $event = new CalendarEvent();
 
@@ -264,10 +259,12 @@ class CalendarController extends AbstractController
             return $this->json(['error' => 'Evento no encontrado'], 404);
         }
 
-        // Validate edit permissions based on scope: global events require editor role, personal ones require ownership
+        // Validate edit permissions based on scope: global events can be modified by their creator or an admin, personal ones require ownership
         if ($event->getIsCompanyWide()) {
-            if (!$this->isGranted('ROLE_CALENDAR_EDITOR')) {
-                return $this->json(['error' => 'No tienes permisos para modificar eventos globales.'], 403);
+            $isCreator = ($event->getOwner() === $user);
+            $isAdmin = $this->isGranted('ROLE_ADMIN');
+            if (!$isCreator && !$isAdmin) {
+                return $this->json(['error' => 'No tienes permisos para modificar eventos globales que no creaste.'], 403);
             }
         } else {
             if ($event->getOwner() !== $user) {
@@ -339,11 +336,11 @@ class CalendarController extends AbstractController
             return $this->json(['error' => 'Evento no encontrado'], 404);
         }
 
-        // Global events can be deleted by their creator or an editor, whereas personal events can only be deleted by their owner
+        // Global events can be deleted by their creator or an admin, personal events can only be deleted by their owner
         if ($event->getIsCompanyWide()) {
             $isCreator = ($event->getOwner() === $user);
-            $isEditor = $this->isGranted('ROLE_CALENDAR_EDITOR');
-            if (!$isCreator && !$isEditor) {
+            $isAdmin = $this->isGranted('ROLE_ADMIN');
+            if (!$isCreator && !$isAdmin) {
                 return $this->json(['error' => 'No tienes permisos para eliminar eventos globales que no creaste.'], 403);
             }
         } else {
@@ -385,17 +382,9 @@ class CalendarController extends AbstractController
             return $this->json(['error' => 'Evento no encontrado'], 404);
         }
 
-        // Global events can be updated by their creator or an editor, whereas personal events require ownership
-        if ($event->getIsCompanyWide()) {
-            $isCreator = ($event->getOwner() === $user);
-            $isEditor = $this->isGranted('ROLE_CALENDAR_EDITOR');
-            if (!$isCreator && !$isEditor) {
-                return $this->json(['error' => 'No tienes permisos para modificar eventos globales que no creaste.'], 403);
-            }
-        } else {
-            if ($event->getOwner() !== $user) {
-                return $this->json(['error' => 'No tienes permisos para modificar este evento personal.'], 403);
-            }
+        // Only admins are allowed to deactivate or restore events
+        if (!$this->isGranted('ROLE_ADMIN')) {
+            return $this->json(['error' => 'No tienes permisos para desactivar o reactivar eventos.'], 403);
         }
 
         // Toggle logical state by altering the deletion timestamp
