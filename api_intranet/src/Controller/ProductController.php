@@ -316,11 +316,17 @@ class ProductController extends AbstractController
         }
 
         $content = $request->getContent();
+        if ($content !== null && !mb_check_encoding($content, 'UTF-8')) {
+            $content = mb_convert_encoding($content, 'UTF-8', 'Windows-1252');
+        }
         $data = json_decode($content, true);
 
         if ($data === null || !is_array($data)) {
             return $this->json(['error' => 'Formato JSON inválido. Se espera una lista de productos.'], 400);
         }
+
+        // Normalize all keys to lowercase to handle Excel headers like 'ID', 'NOMBRE', etc.
+        $data = array_map(fn($item) => is_array($item) ? array_change_key_case($item, CASE_LOWER) : $item, $data);
 
         // Mute individual logs to avoid saturating MySQL
         $auditLogger->mute();
@@ -329,8 +335,43 @@ class ProductController extends AbstractController
         $allErrors = [];
         $productsToSave = [];
 
+        // Extract all IDs from incoming data to query them in one batch
+        $ids = [];
+        foreach ($data as $item) {
+            if (isset($item['id']) && is_numeric($item['id'])) {
+                $ids[] = (int)$item['id'];
+            }
+        }
+
+        // Query existing products if there are any IDs
+        $existingProducts = [];
+        if (count($ids) > 0) {
+            $existingProductsList = $em->getRepository(Product::class)->findBy(['id' => $ids]);
+            foreach ($existingProductsList as $p) {
+                $existingProducts[$p->getId()] = $p;
+            }
+        }
+
         foreach ($data as $index => $item) {
-            $product = new Product();
+            $id = isset($item['id']) && is_numeric($item['id']) ? (int)$item['id'] : null;
+
+            if ($id === null) {
+                $allErrors[] = [
+                    'fila' => $index + 1,
+                    'producto' => $item['nombre'] ?? 'Sin nombre',
+                    'errores' => ["El campo 'id' es obligatorio y debe ser un número válido."]
+                ];
+                continue;
+            }
+
+            // If product exists in DB, retrieve it to update; otherwise, create a new one
+            if (isset($existingProducts[$id])) {
+                $product = $existingProducts[$id];
+            } else {
+                $product = new Product();
+                // Cache this new product in existingProducts to handle duplicate IDs in the same batch
+                $existingProducts[$id] = $product;
+            }
 
             // Set fallback values
             $nombre = !empty($item['nombre']) ? $item['nombre'] : 'N/A';
@@ -400,13 +441,53 @@ class ProductController extends AbstractController
 
         // Batch processing
         try {
-            foreach ($productsToSave as $i => $product) {
-                $em->persist($product);
-                if (($i % $batchSize) === 0) {
-                    $em->flush();
+            $customIdInserts = [];
+            $autoIdInserts = [];
+            $updates = [];
+
+            foreach ($productsToSave as $product) {
+                if ($em->contains($product)) {
+                    $updates[] = $product;
+                } elseif ($product->getId() !== null) {
+                    $customIdInserts[] = $product;
+                } else {
+                    $autoIdInserts[] = $product;
                 }
             }
-            $em->flush();
+
+            // 1. Process custom ID inserts (requires temporary ID generator override)
+            if (count($customIdInserts) > 0) {
+                $metadata = $em->getClassMetadata(Product::class);
+                $originalGeneratorType = $metadata->generatorType;
+                $originalIdGenerator = $metadata->idGenerator;
+
+                $metadata->generatorType = \Doctrine\ORM\Mapping\ClassMetadata::GENERATOR_TYPE_NONE;
+                $metadata->idGenerator = new \Doctrine\ORM\Id\AssignedGenerator();
+
+                foreach ($customIdInserts as $i => $product) {
+                    $em->persist($product);
+                    if (($i % $batchSize) === 0) {
+                        $em->flush();
+                    }
+                }
+                $em->flush();
+
+                // Restore original generator strategy
+                $metadata->generatorType = $originalGeneratorType;
+                $metadata->idGenerator = $originalIdGenerator;
+            }
+
+            // 2. Process updates and auto ID inserts (uses default generator strategy)
+            $autoAndUpdates = array_merge($autoIdInserts, $updates);
+            if (count($autoAndUpdates) > 0) {
+                foreach ($autoAndUpdates as $i => $product) {
+                    $em->persist($product);
+                    if (($i % $batchSize) === 0) {
+                        $em->flush();
+                    }
+                }
+                $em->flush();
+            }
 
             // Log the bulk summary
             $auditLogger->unmute();

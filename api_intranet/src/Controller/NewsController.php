@@ -49,16 +49,16 @@ class NewsController extends AbstractController
         $sort = $request->query->get('sort', 'postedAt');
         $order = $request->query->get('order', 'DESC');
 
-        // Determine active filter. Defaults to true (active only). Non-editors are strictly forced to active=true for security.
+        // Determine active filter. Defaults to true (active only). Non-admins are strictly forced to active=true for security.
         $active = true;
-        if ($this->isGranted('ROLE_NEWS_EDITOR')) {
+        if ($this->isGranted('ROLE_ADMIN')) {
             $activeParam = $request->query->get('active', $request->query->get('isActive'));
             if ($activeParam !== null) {
                 $active = !in_array(strtolower(trim((string)$activeParam)), ['false', '0']);
             }
         }
 
-        // Retrieve the filtered list. If the user has ROLE_NEWS_EDITOR permissions they can also view soft-deleted news articles.
+        // Retrieve the filtered list. If the user has ROLE_ADMIN permissions they can also view soft-deleted news articles.
         $result = $repository->searchAndPaginate([
             'search'          => $search,
             'category'        => $category,
@@ -67,7 +67,7 @@ class NewsController extends AbstractController
             'sort'            => $sort,
             'order'           => $order,
             'active'          => $active,
-            'show_deleted_at' => $this->isGranted('ROLE_NEWS_EDITOR')
+            'show_deleted_at' => $this->isGranted('ROLE_ADMIN')
         ]);
 
         return $this->json($result);
@@ -88,17 +88,17 @@ class NewsController extends AbstractController
      */
     public function show(int $id, NewsRepository $repository): JsonResponse
     {
-        // Check if the current user has news editor permissions
-        $isEditor = $this->isGranted('ROLE_NEWS_EDITOR');
+        // Check if the current user has admin permissions
+        $isAdmin = $this->isGranted('ROLE_ADMIN');
 
-        // Editors can fetch any article, users only active ones
-        if ($isEditor) {
+        // Admins can fetch any article, users only active ones
+        if ($isAdmin) {
             $news = $repository->find($id);
         } else {
             $news = $repository->findOneBy(['id' => $id, 'deletedAt' => null]);
         }
 
-        // Return a 404 response if the article does not exist or has been soft-deleted for a non-editor
+        // Return a 404 response if the article does not exist or has been soft-deleted for a non-admin
         if (!$news) {
             return $this->json(['error' => 'Noticia no encontrada'], 404);
         }
@@ -118,8 +118,8 @@ class NewsController extends AbstractController
             ]
         ];
 
-        // Only include the logical deletion timestamp if the user is an editor
-        if ($isEditor) {
+        // Only include the logical deletion timestamp if the user is an admin
+        if ($isAdmin) {
             $response['deletedAt'] = $news->getDeletedAt() ? $news->getDeletedAt()->format('Y-m-d H:i:s') : null;
         }
 
@@ -150,11 +150,6 @@ class NewsController extends AbstractController
      */
     public function create(Request $request, EntityManagerInterface $em, ValidatorInterface $validator): JsonResponse
     {
-        // Enforce news editor permissions - only designated editors or admins can publish news
-        if (!$this->isGranted('ROLE_NEWS_EDITOR')) {
-            return $this->json(['error' => 'No tienes permisos para publicar noticias.'], 403);
-        }
-
         /** @var User $user */
         $user = $this->getUser();
 
@@ -219,11 +214,6 @@ class NewsController extends AbstractController
      */
     public function update(int $id, Request $request, NewsRepository $repository, EntityManagerInterface $em, ValidatorInterface $validator): JsonResponse
     {
-        // Enforce generic role access for news editors
-        if (!$this->isGranted('ROLE_NEWS_EDITOR')) {
-            return $this->json(['error' => 'No tienes permisos para editar noticias.'], 403);
-        }
-
         // Fetch only active, non-deleted news article by ID
         $news = $repository->findOneBy(['id' => $id, 'deletedAt' => null]);
 
@@ -275,11 +265,6 @@ class NewsController extends AbstractController
      */
     public function delete(int $id, NewsRepository $repository, EntityManagerInterface $em): JsonResponse
     {
-        // Enforce generic role access for news editors
-        if (!$this->isGranted('ROLE_NEWS_EDITOR')) {
-            return $this->json(['error' => 'No tienes permisos para eliminar noticias.'], 403);
-        }
-
         // Fetch only active, non-deleted news article
         $news = $repository->findOneBy(['id' => $id, 'deletedAt' => null]);
 
@@ -318,9 +303,9 @@ class NewsController extends AbstractController
      */
     public function toggle(int $id, NewsRepository $repository, EntityManagerInterface $em): JsonResponse
     {
-        // Enforce generic role access for news editors
-        if (!$this->isGranted('ROLE_NEWS_EDITOR')) {
-            return $this->json(['error' => 'No tienes permisos para modificar noticias.'], 403);
+        // Only admins can toggle active status of a news article
+        if (!$this->isGranted('ROLE_ADMIN')) {
+            return $this->json(['error' => 'No tienes permisos para desactivar o restaurar noticias.'], 403);
         }
 
         // Fetch news article by ID, regardless of its current soft-deleted state
@@ -328,14 +313,6 @@ class NewsController extends AbstractController
 
         if (!$news) {
             return $this->json(['error' => 'Noticia no encontrada'], 404);
-        }
-
-        //  Only the author of the post or an admin can toggle it
-        $isAuthor = ($news->getAuthor() === $this->getUser());
-        $isAdmin = $this->isGranted('ROLE_ADMIN');
-
-        if (!$isAuthor && !$isAdmin) {
-            return $this->json(['error' => 'No tienes permisos para modificar esta noticia.'], 403);
         }
 
         if ($news->getDeletedAt() === null) {
